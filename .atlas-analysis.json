@@ -1,0 +1,100 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Spec2Tools",
+  "projectDescription": "Dynamically convert OpenAPI specs into AI agent tools at runtime—no code generation required.",
+  "theme": "palm",
+  "primaryColor": "#10B981",
+  "lightColor": "#34D399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/how-it-works",
+              "concepts/code-mode",
+              "concepts/authentication"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/using-the-sdk",
+              "guides/using-the-cli",
+              "guides/mcp-server",
+              "guides/authentication-setup",
+              "guides/error-handling"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "SDK",
+            "pages": [
+              "api/sdk/create-tools",
+              "api/sdk/convert-tools-to-code-mode"
+            ]
+          },
+          {
+            "group": "Core",
+            "pages": [
+              "api/core/openapi-parser",
+              "api/core/auth-manager",
+              "api/core/tool-executor",
+              "api/core/code-mode",
+              "api/core/types",
+              "api/core/errors"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "api/cli/commands",
+              "api/cli/options"
+            ]
+          },
+          {
+            "group": "MCP Server",
+            "pages": [
+              "api/mcp/setup",
+              "api/mcp/usage"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Dynamic OpenAPI to AI tool conversion at runtime",
+    "Code mode reduces token usage by 99.9%",
+    "Support for OAuth2, API key, and bearer token authentication",
+    "Multiple integration modes: AI SDK, CLI, and MCP server",
+    "Zero code generation or maintenance overhead"
+  ],
+  "publicApiSurface": [
+    "createTools",
+    "convertToolsToCodeMode",
+    "loadOpenAPISpec",
+    "extractBaseUrl",
+    "extractAuthConfig",
+    "parseOperations",
+    "AuthManager",
+    "createExecutableTools",
+    "executeToolByName",
+    "toAISDKTools",
+    "toCodeModeTools"
+  ]
+}
