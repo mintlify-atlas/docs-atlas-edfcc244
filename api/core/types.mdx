@@ -382,3 +382,41 @@ interface SecurityScheme {
 ```
 
 **Note:** Only OAuth2 Authorization Code flow is supported. Other flows will result in `{ type: 'none' }` auth config.
+
+---
+
+### ToolSet
+
+AI SDK compatible tool set format.
+
+```typescript
+type ToolSet = NonNullable<Parameters<typeof generateText>[0]['tools']>
+```
+
+A record of tools compatible with Vercel AI SDK's `generateText`, `streamText`, and other functions. This is the return type of `toAISDKTools()`.
+
+**Structure:**
+```typescript
+{
+  [toolName: string]: CoreTool
+}
+```
+
+Where each `CoreTool` is created by the AI SDK's `tool()` helper with:
+- `description`: Tool description
+- `inputSchema`: Zod schema for parameters
+- `execute`: Async function that executes the tool
+
+**Example:**
+```typescript
+import type { ToolSet } from '@spec2tools/core';
+import { generateText } from 'ai';
+
+const tools: ToolSet = toAISDKTools(executableTools);
+
+await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Create a new user'
+});
+```

@@ -56,6 +56,44 @@ const result = await tools[0].execute({ id: '123' });
 
 ---
 
+## toAISDKTools
+
+Convert core `Tool[]` into AI SDK `ToolSet` format.
+
+```typescript
+function toAISDKTools(tools: Tool[]): ToolSet
+```
+
+<ParamField path="tools" type="Tool[]" required>
+  Array of executable tools from `createExecutableTools()`
+</ParamField>
+
+<ResponseField name="return" type="ToolSet">
+  A `Record<string, CoreTool>` compatible with Vercel AI SDK's `generateText`, `streamText`, etc. Each tool is wrapped with the `tool()` helper from the `ai` package.
+</ResponseField>
+
+**Example:**
+```typescript
+import { toAISDKTools, createExecutableTools } from '@spec2tools/core';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const tools = createExecutableTools(toolDefs, baseUrl, authManager);
+const aiTools = toAISDKTools(tools);
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools: aiTools,
+  prompt: 'List all users'
+});
+```
+
+<Note>
+  The `@spec2tools/sdk` package provides a simpler `createTools()` function that handles this conversion automatically. Use `toAISDKTools` directly only when you need fine-grained control over the tool creation process.
+</Note>
+
+---
+
 ## executeToolByName
 
 Execute a tool directly by name.
