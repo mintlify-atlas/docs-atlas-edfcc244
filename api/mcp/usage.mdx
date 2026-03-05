@@ -1,0 +1,333 @@
+---
+title: 'Usage'
+description: 'Learn how to use the Spec2Tools MCP server once configured'
+---
+
+## Basic Usage
+
+Once configured, the MCP server exposes your OpenAPI endpoints as tools that AI agents can call naturally. The server automatically:
+
+1. Converts each API operation into a named tool
+2. Validates parameters according to your OpenAPI schema
+3. Builds and executes HTTP requests
+4. Returns formatted responses
+
+## How It Works
+
+<Steps>
+  <Step title="Load OpenAPI Spec">
+    The server reads your OpenAPI 3.x specification from a local file or URL (supports both JSON and YAML).
+  </Step>
+
+  <Step title="Parse Operations">
+    Each API operation is converted into an MCP tool with:
+    - Tool name from `operationId` (or generated from method + path)
+    - Description from `summary` or `description`
+    - Input schema from parameters and request body
+  </Step>
+
+  <Step title="Start MCP Server">
+    Creates a stdio-based MCP server that AI agents can connect to.
+  </Step>
+
+  <Step title="Handle Tool Calls">
+    When an agent calls a tool, the server:
+    - Validates the parameters
+    - Builds the HTTP request (URL, headers, body)
+    - Adds authentication if configured
+    - Executes the request and returns the response
+  </Step>
+</Steps>
+
+## Example API
+
+Given this OpenAPI spec:
+
+```yaml
+openapi: 3.0.0
+info:
+  title: User API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      summary: List all users
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Success
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Success
+```
+
+### Generated Tools
+
+The MCP server will expose two tools:
+
+<CodeGroup>
+  ```typescript listUsers
+  // Tool: listUsers
+  // Description: List all users
+  // Parameters:
+  {
+    limit?: number
+  }
+  ```
+
+  ```typescript getUser
+  // Tool: getUser
+  // Description: Get user by ID
+  // Parameters:
+  {
+    id: number  // required
+  }
+  ```
+</CodeGroup>
+
+### Agent Interaction
+
+An AI agent can then call these tools naturally:
+
+<CodeGroup>
+  ```text User Request
+  "Get me the user with ID 42"
+  ```
+
+  ```json Tool Call
+  {
+    "tool": "getUser",
+    "arguments": {
+      "id": 42
+    }
+  }
+  ```
+
+  ```json API Response
+  {
+    "id": 42,
+    "name": "John Doe",
+    "email": "john@example.com"
+  }
+  ```
+</CodeGroup>
+
+## Code Mode
+
+Code mode collapses all API endpoints into 2 tools (`search` + `execute`), reducing token usage by ~99.9%. The model discovers endpoints via keyword search and calls them by writing Python code in a sandboxed interpreter.
+
+### Benefits
+
+- **Reduced Token Usage**: ~99.9% reduction in tool definition tokens
+- **Scalable**: Works with APIs that have hundreds or thousands of endpoints
+- **Efficient**: AI agents can search and discover endpoints on-demand
+
+### Enabling Code Mode
+
+<CodeGroup>
+  ```bash CLI
+  spec2tools-mcp ./openapi.yaml --code-mode
+  ```
+
+  ```bash Claude Code
+  claude mcp add my-api \
+    -- npx @spec2tools/stdio-mcp ./openapi.yaml --code-mode
+  ```
+
+  ```json Claude Desktop
+  {
+    "mcpServers": {
+      "my-api": {
+        "command": "npx",
+        "args": [
+          "@spec2tools/stdio-mcp",
+          "./openapi.yaml",
+          "--code-mode"
+        ]
+      }
+    }
+  }
+  ```
+
+  ```typescript Programmatic
+  await startMcpServer({
+    spec: './openapi.yaml',
+    codeMode: true,
+  });
+  ```
+</CodeGroup>
+
+### How Code Mode Works
+
+<Steps>
+  <Step title="Search for endpoints">
+    The AI agent uses the `search` tool to find relevant endpoints by keyword:
+    
+    ```json
+    {
+      "tool": "search",
+      "arguments": {
+        "query": "get user"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Execute endpoint">
+    The agent writes Python code to call the discovered endpoint:
+    
+    ```python
+    result = tools.getUser(id=42)
+    print(result)
+    ```
+  </Step>
+
+  <Step title="Get response">
+    The sandboxed interpreter executes the code and returns the API response.
+  </Step>
+</Steps>
+
+<Info>
+  Code mode is especially useful when:
+  - Your API has many endpoints (50+)
+  - You want to minimize token usage
+  - The AI agent doesn't need to see all endpoints upfront
+</Info>
+
+## CLI Examples
+
+### Local OpenAPI Spec
+
+```bash
+# Start server with local spec
+spec2tools-mcp ./openapi.yaml
+
+# Start server with local JSON spec
+spec2tools-mcp ./openapi.json
+```
+
+### Remote OpenAPI Spec
+
+```bash
+# Start server with remote spec
+spec2tools-mcp https://api.example.com/openapi.json
+
+# Start with remote spec and authentication
+API_KEY=xxx spec2tools-mcp https://api.example.com/openapi.yaml
+```
+
+### With Authentication
+
+```bash
+# Using environment variable
+API_KEY=your-api-key spec2tools-mcp ./api.yaml
+
+# Using command-line option
+spec2tools-mcp ./api.yaml --api-key your-api-key
+```
+
+### Custom Server Name
+
+```bash
+# Set custom name and version
+spec2tools-mcp ./openapi.yaml --name "My Custom API" --version "2.0.0"
+```
+
+## Error Handling
+
+The MCP server provides detailed error messages for common issues:
+
+<AccordionGroup>
+  <Accordion title="Invalid Parameters">
+    If the AI agent provides invalid parameters, the server returns a validation error:
+    
+    ```json
+    {
+      "error": "Parameter validation failed: 'id' is required"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="API Errors">
+    If the API returns an error, the server forwards the error response:
+    
+    ```json
+    {
+      "error": "API Error (404): User not found"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Network Errors">
+    If the request fails due to network issues:
+    
+    ```json
+    {
+      "error": "Network error: Failed to fetch https://api.example.com/users"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Authentication Errors">
+    If authentication fails:
+    
+    ```json
+    {
+      "error": "Authentication failed: Invalid API key"
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Clear Operation IDs" icon="tag">
+    Use descriptive `operationId` values in your OpenAPI spec to generate intuitive tool names.
+  </Card>
+
+  <Card title="Add Descriptions" icon="file-lines">
+    Include detailed `summary` and `description` fields to help AI agents understand what each tool does.
+  </Card>
+
+  <Card title="Secure API Keys" icon="lock">
+    Use environment variables for API keys instead of hardcoding them in config files.
+  </Card>
+
+  <Card title="Enable Code Mode" icon="code">
+    For APIs with many endpoints, enable code mode to reduce token usage and improve performance.
+  </Card>
+</CardGroup>
+
+## Related Packages
+
+<CardGroup cols={3}>
+  <Card title="Core" icon="cube" href="/api/core/openapi-parser">
+    Core utilities for OpenAPI parsing
+  </Card>
+
+  <Card title="CLI" icon="terminal" href="/api/cli/commands">
+    Interactive CLI with chat interface
+  </Card>
+
+  <Card title="SDK" icon="code" href="/api/sdk/create-tools">
+    AI SDK tool generation
+  </Card>
+</CardGroup>

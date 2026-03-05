@@ -1,0 +1,440 @@
+---
+title: Using the CLI
+description: Interactive command-line interface for testing APIs and chatting with AI agents that can call your API endpoints
+---
+
+The `@spec2tools/cli` package provides an interactive terminal interface for working with OpenAPI specifications. It's perfect for testing APIs, exploring endpoints, and experimenting with AI agents.
+
+## Installation
+
+You can use the CLI without installation via `npx`, or install it globally:
+
+<CodeGroup>
+```bash npx (Recommended)
+npx @spec2tools/cli start --spec ./openapi.yaml
+```
+
+```bash Global Install
+npm install -g @spec2tools/cli
+spec2tools start --spec ./openapi.yaml
+```
+
+```bash Local Install
+npm install @spec2tools/cli
+npx spec2tools start --spec ./openapi.yaml
+```
+</CodeGroup>
+
+## Quick Start
+
+<Steps>
+  <Step title="Start the CLI">
+    ```bash
+    npx @spec2tools/cli start --spec https://api.example.com/openapi.json
+    ```
+  </Step>
+
+  <Step title="Chat with the agent">
+    ```
+    > List all users
+    ```
+    The AI agent will use the available API tools to respond to your request.
+  </Step>
+
+  <Step title="Explore with commands">
+    ```
+    > /tools
+    > /schema getUser
+    > /call listUsers --limit 10
+    ```
+  </Step>
+</Steps>
+
+## Commands
+
+The CLI supports both natural language chat and special commands starting with `/`.
+
+### Chat Mode
+
+Just type your message to interact with the AI agent:
+
+```bash
+> What endpoints are available?
+> Create a user named Alice with email alice@example.com
+> Get the user with ID 42
+```
+
+The agent has access to all API endpoints as tools and will call them automatically to fulfill your requests.
+
+### Special Commands
+
+<AccordionGroup>
+  <Accordion title="/tools - List available tools" icon="wrench">
+    Display all API endpoints as tools with their signatures and descriptions.
+
+    ```bash packages/cli/src/cli.ts
+    > /tools
+
+    Available tools:
+    1. listUsers(limit?: number)
+       List all users
+    2. getUser(id: string)
+       Get user by ID
+    3. createUser(name: string, email: string)
+       Create a new user
+    ```
+
+    In code mode, only shows the `search` and `execute` tools:
+    ```bash
+    > /tools
+
+    Code mode tools:
+    1. search
+       Search for available API endpoints by keyword
+    2. execute
+       Execute Python code that calls API endpoints
+    ```
+  </Accordion>
+
+  <Accordion title="/call - Call a tool directly" icon="phone">
+    Execute an API endpoint without using the AI agent.
+
+    ```bash packages/cli/src/cli.ts
+    > /call listUsers --limit 10
+
+    Result:
+    {
+      "users": [
+        { "id": "1", "name": "Alice" },
+        { "id": "2", "name": "Bob" }
+      ]
+    }
+    ```
+
+    **Syntax:**
+    ```bash
+    /call <toolName> [--param value ...]
+    ```
+
+    **Examples:**
+    ```bash
+    /call getUser --id "123"
+    /call createUser --name "John Doe" --email "john@example.com"
+    /call searchPosts --query "AI agents" --limit 5
+    ```
+
+    **Value Parsing:**
+    - Quoted strings: `--name "John Doe"` → `"John Doe"`
+    - Numbers: `--limit 10` → `10`
+    - Booleans: `--active true` → `true`
+    - JSON: `--tags '["ai","ml"]'` → `["ai", "ml"]`
+  </Accordion>
+
+  <Accordion title="/schema - Show tool schema" icon="code">
+    Display the JSON schema for a tool's parameters.
+
+    ```bash packages/cli/src/cli.ts
+    > /schema createUser
+
+    Schema for createUser:
+    {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "User's full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address"
+        }
+      },
+      "required": ["name", "email"]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="/clear - Clear conversation history" icon="broom">
+    Reset the AI agent's conversation context.
+
+    ```bash packages/cli/src/cli.ts
+    > /clear
+    Conversation history cleared.
+    ```
+
+    Use this when:
+    - You want to start a fresh conversation
+    - The agent is confused by previous context
+    - You've hit token limits
+  </Accordion>
+
+  <Accordion title="/help - Show help" icon="circle-question">
+    Display available commands and examples.
+
+    ```bash packages/cli/src/cli.ts
+    > /help
+
+    Agent CLI Help
+
+    Chat Mode:
+      Just type your message to chat with the AI agent.
+      The agent can use available tools to help you.
+
+    Special Commands:
+      /tools  - List all available tools
+      /call <tool> [args]  - Call a tool directly
+      /schema <tool>  - Show tool parameter schema
+      /clear  - Clear conversation history
+      /help  - Show this help message
+      /exit  - Exit the CLI
+
+    Examples:
+      > What can you do?
+      > Create a user named John with email john@example.com
+      > /call createUser --name "John" --email "john@example.com"
+      > /schema createUser
+    ```
+  </Accordion>
+
+  <Accordion title="/exit - Exit the CLI" icon="right-from-bracket">
+    Exit the interactive session.
+
+    ```bash
+    > /exit
+    Goodbye!
+    ```
+
+    You can also use `/quit` or press `Ctrl+C`.
+  </Accordion>
+</AccordionGroup>
+
+## Options
+
+### `--spec <path>` (Required)
+
+Path or URL to your OpenAPI specification file (JSON or YAML).
+
+```bash
+# Local file
+spec2tools start --spec ./openapi.yaml
+
+# Remote URL
+spec2tools start --spec https://api.example.com/openapi.json
+
+# Relative path
+spec2tools start --spec ../api/spec.yaml
+```
+
+### `--no-auth`
+
+Skip authentication even if the API spec requires it.
+
+```bash packages/cli/src/cli.ts
+spec2tools start --spec ./api.yaml --no-auth
+```
+
+<Warning>
+  API calls will likely fail with 401/403 errors if authentication is required. Use this only for testing or when auth is handled externally.
+</Warning>
+
+### `--api-key <key>`
+
+Provide an API key or bearer token directly without interactive prompts.
+
+```bash packages/cli/src/cli.ts
+spec2tools start --spec ./api.yaml --api-key sk_test_123abc
+```
+
+Works with:
+- **Bearer tokens:** Adds `Authorization: Bearer <key>` header
+- **API keys:** Adds to the header/query parameter specified in the spec
+- **OAuth2:** Uses the key as an access token (skips OAuth flow)
+
+### `--code-mode`
+
+Enable code mode to reduce token usage by collapsing all endpoints into 2 tools.
+
+```bash packages/cli/src/cli.ts
+spec2tools start --spec ./large-api.yaml --code-mode
+```
+
+See the [SDK guide](/guides/using-the-sdk#code-mode) for details on how code mode works.
+
+## Authentication
+
+The CLI handles authentication automatically based on your OpenAPI spec.
+
+### Interactive Authentication
+
+When you start the CLI with an authenticated API, it will prompt you:
+
+<CodeGroup>
+```bash OAuth2
+spec2tools start --spec ./api.yaml
+
+✓ Loaded: My API v1.0.0
+Base URL: https://api.example.com
+✓ Found 15 operations
+
+Authentication required (oauth2)
+Registering OAuth2 client...
+Client registered successfully.
+
+Authentication required. Opening browser...
+If browser doesn't open, visit: https://...
+
+✓ Authentication successful!
+```
+
+```bash API Key
+spec2tools start --spec ./api.yaml
+
+✓ Loaded: My API v1.0.0
+Base URL: https://api.example.com
+✓ Found 15 operations
+
+Authentication required (apiKey)
+Enter your API key (X-API-Key): ****
+
+✓ Using provided API key
+```
+
+```bash Bearer Token
+spec2tools start --spec ./api.yaml
+
+✓ Loaded: My API v1.0.0
+Base URL: https://api.example.com
+✓ Found 15 operations
+
+Authentication required (bearer)
+Enter your Bearer token: ****
+
+✓ Authentication successful!
+```
+</CodeGroup>
+
+### Non-Interactive Authentication
+
+Use `--api-key` for CI/CD or automated workflows:
+
+```bash
+API_KEY=sk_123 spec2tools start --spec ./api.yaml --api-key $API_KEY
+```
+
+See the [Authentication Setup guide](/guides/authentication-setup) for detailed configuration.
+
+## Error Handling
+
+The CLI provides clear error messages for common issues:
+
+<CodeGroup>
+```bash Spec Load Error
+✗ Loading OpenAPI specification...
+
+Spec Error: Failed to load OpenAPI spec: ENOENT: no such file or directory
+```
+
+```bash Auth Error
+✗ Authentication required (oauth2)
+
+Auth Error: Authentication failed: Port 54321 is already in use
+```
+
+```bash Tool Execution Error
+✗ createUser failed
+
+Tool createUser failed: Request failed with status 400: Invalid email format
+```
+
+```bash Schema Error
+✗ Parsing operations...
+
+Schema Error: Unsupported schema at /paths/users/post/requestBody: 
+Nested objects are not supported
+```
+</CodeGroup>
+
+See the [Error Handling guide](/guides/error-handling) for debugging strategies.
+
+## Complete Example
+
+Here's a full workflow demonstrating the CLI's capabilities:
+
+```bash
+# Start with authenticated API
+$ npx @spec2tools/cli start --spec ./github-api.yaml --api-key ghp_xxxxx
+
+✓ Loaded: GitHub REST API v1.0.0
+Base URL: https://api.github.com
+✓ Found 245 operations
+✓ Using provided API key
+
+--- Spec2Tools ---
+Type your message or use special commands:
+  /tools  - List available tools
+  /call   - Call a tool directly
+  /schema - Show tool schema
+  /help   - Show help
+  /exit   - Exit the CLI
+
+> /tools
+
+Available tools:
+1. listRepos(per_page?: number, page?: number)
+   List repositories for the authenticated user
+2. getRepo(owner: string, repo: string)
+   Get a repository
+3. createRepo(name: string, description?: string, private?: boolean)
+   Create a repository
+...
+
+> /call listRepos --per_page 3
+
+✓ listRepos completed
+
+Result:
+[
+  { "name": "spec2tools", "description": "Convert OpenAPI to AI tools" },
+  { "name": "my-project", "description": "My awesome project" },
+  { "name": "demo", "description": null }
+]
+
+> Create a new private repository called 'test-repo'
+
+Thinking...
+✓
+
+I've created a new private repository called 'test-repo'. 
+You can view it at https://github.com/username/test-repo
+
+> /exit
+Goodbye!
+```
+
+## Tips & Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use code mode for large APIs" icon="code">
+    APIs with 50+ endpoints benefit from ~99.9% token reduction with `--code-mode`.
+  </Card>
+  <Card title="Test with /call first" icon="vial">
+    Debug API issues by calling tools directly with `/call` before using chat.
+  </Card>
+  <Card title="Check schemas" icon="file-code">
+    Use `/schema` to understand required parameters before calling tools.
+  </Card>
+  <Card title="Clear history when stuck" icon="rotate">
+    Use `/clear` if the agent gets confused or makes repeated mistakes.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MCP Server" icon="server" href="/guides/mcp-server">
+    Integrate with Claude Desktop and other MCP clients
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication-setup">
+    Set up OAuth2, API keys, and bearer tokens
+  </Card>
+</CardGroup>

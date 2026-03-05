@@ -1,0 +1,176 @@
+---
+title: convertToolsToCodeMode
+description: Convert an existing AI SDK ToolSet into code mode (2 tools)
+---
+
+## Function Signature
+
+```typescript
+function convertToolsToCodeMode(tools: ToolSet): ToolSet
+```
+
+Convert an existing AI SDK ToolSet into code mode (2 tools: `search` + `execute`).
+
+Useful when you already have tools from another source (e.g. `createMCPClient`) and want to reduce token usage by collapsing them into code mode. This transforms N tools into exactly 2 tools, reducing token consumption by ~99.9% for large APIs.
+
+## Parameters
+
+<ParamField path="tools" type="ToolSet" required>
+  An existing AI SDK ToolSet to convert. This is typically a record of tools obtained from another source like MCP client, or from `createTools()` without code mode enabled.
+  
+  Each tool should have:
+  - `description`: String describing the tool
+  - `inputSchema`: Zod schema or JSON schema for parameters
+  - `execute`: Async function to execute the tool
+</ParamField>
+
+## Returns
+
+<ResponseField name="ToolSet" type="{ search: CoreTool, execute: CoreTool }">
+  A ToolSet containing exactly 2 tools:
+
+  <Expandable title="tools">
+    <ResponseField name="search" type="CoreTool">
+      Searches for available API endpoints by keyword. Returns matching function signatures with parameter types and usage examples. The model uses this to discover what functions are available before writing code.
+
+      **Input**: `{ query: string }` - Keywords to search for in endpoint names and descriptions
+
+      **Output**: String containing matching function signatures, descriptions, and examples
+    </ResponseField>
+
+    <ResponseField name="execute" type="CoreTool">
+      Executes Python code that calls API endpoints. Functions discovered via `search` are available to call directly using keyword arguments. The code runs in a sandboxed Monty interpreter with a 30-second timeout.
+
+      **Input**: `{ code: string }` - Python code to execute
+
+      **Output**: The result of the last expression in the code, or an error message
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Usage
+
+### With MCP Client
+
+```typescript
+import { createMCPClient } from '@ai-sdk/mcp';
+import { convertToolsToCodeMode } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const client = await createMCPClient({
+  transport: { type: 'sse', url: 'http://localhost:3000/sse' },
+});
+
+// Get all tools from MCP server (potentially hundreds)
+const tools = await client.tools();
+
+// Convert to just 2 tools: search + execute
+const codeModeTools = convertToolsToCodeMode(tools);
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools: codeModeTools,
+  prompt: 'List all users',
+});
+```
+
+### With createTools
+
+```typescript
+import { createTools, convertToolsToCodeMode } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+// Create tools in normal mode first
+const tools = await createTools({ spec: './openapi.yaml' });
+
+// Convert to code mode after the fact
+const codeModeTools = convertToolsToCodeMode(tools);
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools: codeModeTools,
+  prompt: 'Get user with ID 123',
+});
+```
+
+**Note**: If using `createTools()`, it's more efficient to enable code mode directly via the `codeMode` option:
+
+```typescript
+const tools = await createTools({ 
+  spec: './openapi.yaml',
+  codeMode: true 
+});
+```
+
+### Example Model Interaction
+
+When using code mode tools, the model will:
+
+1. **Search for endpoints**:
+   ```
+   Tool: search
+   Input: { query: "user" }
+   Output:
+   getUser(id: str)
+     Get a user by ID
+     Example: getUser(id="123")
+
+   listUsers(limit: int = None)
+     List all users with optional limit
+     Example: listUsers(limit=10)
+   ```
+
+2. **Execute the call**:
+   ```
+   Tool: execute
+   Input: { code: "user = getUser(id='123')\nuser" }
+   Output: { "id": "123", "name": "John Doe", "email": "john@example.com" }
+   ```
+
+## How It Works
+
+1. **Index Building**: Converts each tool into a searchable index entry with:
+   - Python-safe function name (hyphens/dots → underscores)
+   - Type signatures inferred from JSON schema
+   - Example usage based on required parameters
+
+2. **Search Tool**: Performs keyword matching across function names and descriptions
+
+3. **Execute Tool**: Runs Python code in a sandboxed [Monty](https://github.com/pydantic/monty) interpreter:
+   - External function calls are intercepted
+   - Mapped back to original tool names
+   - Executed with the AI SDK tool's execute function
+   - Results are returned to the Python runtime
+
+## Type Definitions
+
+### ToolSet
+
+```typescript
+type ToolSet = NonNullable<Parameters<typeof generateText>[0]['tools']>;
+```
+
+A record type compatible with AI SDK's tool parameter. Each tool must have:
+- `description`: String describing the tool
+- `inputSchema`: Zod schema or schema with `jsonSchema` property
+- `execute`: Async function `(params: unknown, options: unknown) => Promise<unknown>`
+
+## Performance
+
+For a 100-endpoint API:
+- **Normal mode**: 100 tools in context = ~15,000 tokens
+- **Code mode**: 2 tools in context = ~150 tokens
+- **Savings**: ~99% reduction in context size
+
+This is especially valuable for:
+- Large APIs (50+ endpoints)
+- Long-running conversations
+- Cost-sensitive applications
+- Models with small context windows
+
+## Related
+
+- [createTools](/api/sdk/create-tools) - Create tools from OpenAPI spec (supports `codeMode` option)
+- [Code Mode Guide](/concepts/code-mode) - Learn more about code mode

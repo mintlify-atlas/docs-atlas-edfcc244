@@ -1,0 +1,439 @@
+---
+title: "Authentication"
+description: "How Spec2Tools handles API authentication"
+---
+
+Spec2Tools automatically extracts and handles authentication from OpenAPI security schemes. It supports OAuth2, API keys, bearer tokens, and basic auth.
+
+## Supported Authentication Types
+
+<CardGroup cols={2}>
+  <Card title="OAuth2" icon="shield-check">
+    Authorization code flow with PKCE
+  </Card>
+  <Card title="API Key" icon="key">
+    Header or query parameter authentication
+  </Card>
+  <Card title="Bearer Token" icon="ticket">
+    JWT or opaque tokens
+  </Card>
+  <Card title="Basic Auth" icon="user-lock">
+    Username and password
+  </Card>
+</CardGroup>
+
+## Authentication Extraction
+
+Authentication configuration is extracted from the OpenAPI spec's `securitySchemes` (`openapi-parser.ts:63`):
+
+```yaml openapi.yaml
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      name: X-API-Key
+      in: header
+
+security:
+  - apiKey: []
+```
+
+The parser converts this to:
+
+```typescript
+type AuthConfig = {
+  type: 'apiKey';
+  apiKeyHeader: 'X-API-Key';
+  apiKeyIn: 'header';
+}
+```
+
+## Authentication Types in Detail
+
+### OAuth2
+
+Supports the authorization code flow with PKCE (`auth-manager.ts:207`):
+
+<Steps>
+  <Step title="Dynamic Client Registration">
+    Automatically registers an OAuth2 client (`auth-manager.ts:227`)
+  </Step>
+  <Step title="Browser Authorization">
+    Opens browser to authorization URL with PKCE challenge (`auth-manager.ts:264`)
+  </Step>
+  <Step title="Callback Handling">
+    Starts local server to receive authorization code (`auth-manager.ts:318`)
+  </Step>
+  <Step title="Token Exchange">
+    Exchanges code for access token with code verifier (`auth-manager.ts:396`)
+  </Step>
+</Steps>
+
+<CodeGroup>
+```yaml OpenAPI Spec
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/authorize
+          tokenUrl: https://auth.example.com/token
+          scopes:
+            read: Read access
+            write: Write access
+
+security:
+  - oauth2: [read, write]
+```
+
+```typescript Extracted Config
+{
+  type: 'oauth2',
+  authorizationUrl: 'https://auth.example.com/authorize',
+  tokenUrl: 'https://auth.example.com/token',
+  scopes: ['read', 'write']
+}
+```
+</CodeGroup>
+
+<Info>
+  The OAuth2 flow uses PKCE (Proof Key for Code Exchange) for security. A code verifier is generated and the SHA-256 challenge is sent to the authorization server (`auth-manager.ts:353`).
+</Info>
+
+### API Key
+
+Supports both header and query parameter authentication (`openapi-parser.ts:138`):
+
+<Tabs>
+  <Tab title="Header">
+    ```yaml OpenAPI
+    components:
+      securitySchemes:
+        apiKey:
+          type: apiKey
+          name: X-API-Key
+          in: header
+    ```
+    
+    Becomes header:
+    ```
+    X-API-Key: your-api-key-here
+    ```
+  </Tab>
+  
+  <Tab title="Query Parameter">
+    ```yaml OpenAPI
+    components:
+      securitySchemes:
+        apiKey:
+          type: apiKey
+          name: api_key
+          in: query
+    ```
+    
+    Becomes query param:
+    ```
+    https://api.example.com/users?api_key=your-api-key-here
+    ```
+  </Tab>
+</Tabs>
+
+Prompts user for API key when needed (`auth-manager.ts:134`):
+
+```
+Enter your API key (X-API-Key): █
+```
+
+### Bearer Token
+
+Supports HTTP bearer authentication (`openapi-parser.ts:146`):
+
+```yaml openapi.yaml
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+```
+
+Prompts for token (`auth-manager.ts:157`):
+
+```
+Enter your Bearer token: █
+```
+
+Adds to request headers (`auth-manager.ts:66`):
+
+```
+Authorization: Bearer eyJhbGc...
+```
+
+### Basic Auth
+
+Supports HTTP basic authentication (`openapi-parser.ts:150`):
+
+```yaml openapi.yaml
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+```
+
+Prompts for credentials (`auth-manager.ts:178`):
+
+```
+Enter username: █
+Enter password: █
+```
+
+Encodes as Base64 and adds header (`auth-manager.ts:201`):
+
+```
+Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
+```
+
+## Global vs Operation-Level Security
+
+OpenAPI specs can define security globally or per-operation (`openapi-parser.ts:74`):
+
+<Tabs>
+  <Tab title="Global Security">
+    ```yaml
+    security:
+      - apiKey: []
+    
+    paths:
+      /users:
+        get:
+          # Inherits global security
+    ```
+  </Tab>
+  
+  <Tab title="Operation-Level Security">
+    ```yaml
+    paths:
+      /public:
+        get:
+          security: []  # No auth required
+      
+      /admin:
+        get:
+          security:
+            - oauth2: [admin]  # Requires OAuth2 with admin scope
+    ```
+  </Tab>
+</Tabs>
+
+The auth manager respects operation-level overrides (`auth-manager.ts:57`):
+
+```typescript
+// Check if a specific tool requires auth
+const requiresAuth = authManager.requiresAuth(tool.authConfig);
+
+// Get headers for a specific tool
+const headers = authManager.getAuthHeaders(tool.authConfig);
+```
+
+## Authentication Flow
+
+### Initialization
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+
+const { tools, authManager } = await createTools(
+  'https://api.example.com/openapi.json'
+);
+
+// Check if authentication is needed
+if (authManager.requiresAuth()) {
+  await authManager.authenticate();
+}
+```
+
+### Automatic Header Injection
+
+Once authenticated, the executor automatically adds auth headers (`tool-executor.ts:76`):
+
+```typescript
+const headers = {
+  ...authManager.getAuthHeaders(tool.authConfig)
+};
+```
+
+For API key in query, adds to URL (`tool-executor.ts:66`):
+
+```typescript
+const authQueryParams = authManager.getAuthQueryParams(tool.authConfig);
+for (const [key, value] of Object.entries(authQueryParams)) {
+  urlObj.searchParams.set(key, value);
+}
+```
+
+## Manual Token Management
+
+You can set tokens manually instead of using the interactive flow:
+
+```typescript
+import { AuthManager } from '@spec2tools/core';
+
+const authManager = new AuthManager({
+  type: 'bearer'
+});
+
+// Set token directly
+authManager.setAccessToken('your-token-here');
+
+// Now all API calls will use this token
+const result = await tool.execute({ ... });
+```
+
+<Warning>
+  Manual token management bypasses the authentication flow. Ensure your token is valid and has the required scopes.
+</Warning>
+
+## Security Scheme Parsing
+
+The parser converts OpenAPI security schemes to `AuthConfig` (`openapi-parser.ts:118`):
+
+```typescript
+function parseSecurityScheme(
+  scheme: SecurityScheme,
+  scopes: string[]
+): AuthConfig {
+  if (scheme.type === 'oauth2') {
+    const flow = scheme.flows?.authorizationCode;
+    return {
+      type: 'oauth2',
+      authorizationUrl: flow.authorizationUrl,
+      tokenUrl: flow.tokenUrl,
+      scopes: scopes,
+    };
+  }
+  
+  if (scheme.type === 'apiKey') {
+    return {
+      type: 'apiKey',
+      apiKeyHeader: scheme.name,
+      apiKeyIn: scheme.in,
+    };
+  }
+  
+  // ... bearer and basic auth
+}
+```
+
+<Info>
+  Only OAuth2 authorization code flow is supported. Client credentials and implicit flows throw `UnsupportedSchemaError`.
+</Info>
+
+## No Authentication
+
+If no security is defined or security is explicitly empty, no auth is required:
+
+```yaml
+# No security defined → type: 'none'
+paths:
+  /public:
+    get:
+      summary: Public endpoint
+
+# OR explicitly empty → type: 'none'
+paths:
+  /public:
+    get:
+      security: []
+```
+
+The executor skips auth headers for these endpoints (`auth-manager.ts:42`):
+
+```typescript
+if (!authManager.requiresAuth(tool.authConfig)) {
+  // No auth headers added
+}
+```
+
+## OAuth2 Callback Server
+
+During OAuth2 flow, a temporary local server handles the callback (`auth-manager.ts:264`):
+
+```
+Authentication required. Opening browser...
+If browser doesn't open, visit: https://auth.example.com/authorize?...
+
+Listening on http://127.0.0.1:54321/callback
+```
+
+After authorization:
+
+```html
+Authentication Successful!
+You can close this window and return to the CLI.
+```
+
+The server automatically shuts down after receiving the callback (`auth-manager.ts:312`).
+
+<Warning>
+  If port 54321 is in use, authentication will fail with `EADDRINUSE` error. Free the port and try again.
+</Warning>
+
+## Token Storage
+
+Tokens are stored in memory for the session (`auth-manager.ts:29`):
+
+```typescript
+private accessToken?: string;
+private refreshToken?: string;
+```
+
+<Note>
+  Tokens are not persisted to disk. You'll need to re-authenticate each time you start a new session.
+</Note>
+
+## Example: Complete Authentication Setup
+
+<CodeGroup>
+```typescript SDK
+import { createTools } from '@spec2tools/sdk';
+
+const { tools, authManager } = await createTools(
+  'https://api.example.com/openapi.json'
+);
+
+if (authManager.requiresAuth()) {
+  // Interactive authentication
+  await authManager.authenticate();
+}
+
+// All tools now use authenticated requests
+const result = await tools.find(t => t.name === 'getUser')
+  ?.execute({ id: '123' });
+```
+
+```typescript Manual Token
+import { createTools } from '@spec2tools/sdk';
+
+const { tools, authManager } = await createTools(
+  'https://api.example.com/openapi.json'
+);
+
+// Set token from environment variable
+authManager.setAccessToken(process.env.API_TOKEN!);
+
+const result = await tools[0].execute({ ... });
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication Setup Guide" icon="key" href="/guides/authentication-setup">
+    Step-by-step authentication configuration
+  </Card>
+  <Card title="Using the SDK" icon="code" href="/guides/using-the-sdk">
+    Integrate authentication in your app
+  </Card>
+</CardGroup>

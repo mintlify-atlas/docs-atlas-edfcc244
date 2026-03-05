@@ -1,0 +1,238 @@
+---
+title: Code Mode
+description: Transform large tool sets into code-based interfaces
+---
+
+Code Mode reduces token consumption by 99.9% for large APIs by transforming hundreds or thousands of tools into just 2 tools: `search` and `execute`. The model discovers endpoints via keyword search and calls them by writing Python code executed in a sandboxed interpreter.
+
+## toCodeModeTools
+
+Transform an AI SDK ToolSet into exactly 2 code-mode tools.
+
+```typescript
+function toCodeModeTools(tools: ToolSet): ToolSet
+```
+
+<ParamField path="tools" type="ToolSet" required>
+  Original tool set from AI SDK. Can contain any number of tools with `execute` functions.
+</ParamField>
+
+<ResponseField name="return" type="ToolSet">
+  A new tool set containing exactly 2 tools:
+  - `search`: Search for available API endpoints by keyword
+  - `execute`: Execute Python code that calls API endpoints
+</ResponseField>
+
+**Example:**
+```typescript
+import { toCodeModeTools } from '@spec2tools/core';
+import { generateText } from 'ai';
+
+// Original: 500 tools from OpenAPI spec
+const apiTools = { ...500 tools... };
+
+// Code Mode: 2 tools
+const codeModeTools = toCodeModeTools(apiTools);
+
+const result = await generateText({
+  model: openai('gpt-4'),
+  tools: codeModeTools,
+  prompt: 'List users and create a new user named John'
+});
+```
+
+---
+
+## How It Works
+
+Code Mode works in three phases:
+
+### 1. Indexing
+
+All tools are indexed with metadata:
+- **Python-safe name:** Converts tool names to valid Python identifiers
+- **Signature:** Function signature with parameter types
+- **Description:** Tool description from schema
+- **Example:** Sample function call with required parameters
+- **Search text:** Combined text for keyword matching
+
+**Name Conversion:**
+```typescript
+// Original → Python name
+'get-user'     → 'get_user'
+'api.users.list' → 'api_users_list'
+'123-tool'     → '_123_tool'
+```
+
+### 2. Search Tool
+
+The `search` tool allows the model to discover available endpoints:
+
+```typescript
+search({ query: string })
+```
+
+**Search Algorithm:**
+1. Splits query into keywords
+2. Searches tool names, Python names, and descriptions
+3. Returns matching tools with signatures and examples
+
+**Example:**
+```typescript
+// Model calls:
+await search({ query: 'user create' });
+
+// Returns:
+createUser(name: str, email: str)
+  Create a new user account
+  Example: createUser(name="...", email="...")
+
+addUser(username: str, password: str = None)
+  Add user to system
+  Example: addUser(username="...")
+```
+
+### 3. Execute Tool
+
+The `execute` tool runs Python code in a sandboxed Monty interpreter:
+
+```typescript
+execute({ code: string })
+```
+
+**Execution Flow:**
+1. Parse Python code with Monty
+2. Start execution with 30-second timeout
+3. When code calls an API function:
+   - Map Python name back to original tool name
+   - Extract keyword arguments
+   - Call original tool's `execute()` function
+   - Return result to Python code
+4. Continue execution until completion
+5. Return final output
+
+**Example:**
+```typescript
+// Model writes:
+await execute({ code: `
+users = listUsers(limit=5)
+user = createUser(name="John", email="john@example.com")
+user
+` });
+
+// Executes:
+// 1. Calls listUsers tool with { limit: 5 }
+// 2. Calls createUser tool with { name: 'John', email: 'john@example.com' }
+// 3. Returns final output (user object)
+```
+
+---
+
+## Sandboxing
+
+Code execution is sandboxed using [Monty](https://github.com/pydantic/monty), a safe Python interpreter:
+
+**Security Features:**
+- No file system access
+- No network access
+- No imports
+- No dangerous built-ins
+- Execution timeout (30 seconds)
+
+**Available Features:**
+- Variables and assignments
+- Function calls (registered API functions only)
+- Basic data types (str, int, float, bool, list, dict)
+- Control flow (if/else, loops)
+- Arithmetic and logic
+
+---
+
+## Error Handling
+
+Errors are caught and formatted for the model:
+
+<Expandable title="Syntax Error">
+```python
+Syntax Error: invalid syntax at line 2
+```
+</Expandable>
+
+<Expandable title="Runtime Error">
+```python
+Runtime Error: division by zero
+Traceback:
+  File "<code>", line 3, in <module>
+```
+</Expandable>
+
+<Expandable title="Type Error">
+```python
+Type Error: expected str, got int
+  Parameter 'name' at line 2
+```
+</Expandable>
+
+<Expandable title="Unknown Function">
+```python
+ValueError: Unknown function: unknownTool
+```
+</Expandable>
+
+<Expandable title="API Execution Error">
+```python
+RuntimeError: HTTP 404 Not Found
+URL: GET https://api.example.com/users/999
+Response: {"error":"User not found"}
+```
+</Expandable>
+
+---
+
+## Best Practices
+
+**When to Use Code Mode:**
+- APIs with 50+ endpoints
+- Complex multi-step workflows
+- Token budget constraints
+- Need for conditional logic
+
+**When NOT to Use Code Mode:**
+- Simple APIs (< 20 endpoints)
+- Single tool calls
+- Models that don't support tool use well
+- Real-time latency requirements
+
+**Prompt Engineering:**
+```typescript
+const prompt = `
+You have access to an API via search and execute tools.
+
+1. Use search() to find relevant endpoints
+2. Use execute() to call them with Python code
+3. Always use keyword arguments
+
+Example:
+users = listUsers(limit=10)
+user = createUser(name="John", email="john@example.com")
+`;
+```
+
+---
+
+## Performance
+
+**Token Reduction:**
+- 1000 tools × 200 tokens = 200,000 tokens
+- Code Mode = ~1,000 tokens (search + execute descriptions)
+- **Savings: 99.5%**
+
+**Trade-offs:**
+- Requires 2 tool calls instead of 1 (search → execute)
+- Model must write Python code correctly
+- Slightly higher latency per request
+
+**Benchmarks:**
+- Small APIs (< 50 tools): Standard mode recommended
+- Medium APIs (50-200 tools): Either mode works
+- Large APIs (200+ tools): Code Mode recommended

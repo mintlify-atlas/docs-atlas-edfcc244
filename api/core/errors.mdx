@@ -1,0 +1,334 @@
+---
+title: Errors
+description: Error classes thrown by Spec2Tools
+---
+
+Spec2Tools defines custom error classes for different failure scenarios. All errors extend the standard JavaScript `Error` class.
+
+## UnsupportedSchemaError
+
+Thrown when the OpenAPI parser encounters unsupported schema features.
+
+```typescript
+class UnsupportedSchemaError extends Error {
+  constructor(path: string, reason: string)
+}
+```
+
+<ParamField path="path" type="string" required>
+  The path in the schema where the unsupported feature was found (e.g., "getUser.requestBody.address")
+</ParamField>
+
+<ParamField path="reason" type="string" required>
+  Description of what is unsupported
+</ParamField>
+
+**Common Reasons:**
+- `anyOf is not supported`
+- `oneOf is not supported`
+- `allOf is not supported`
+- `Arrays of objects are not supported`
+- `Nested objects beyond 1 level are not supported`
+- `File uploads are not supported`
+- `Only #/components/schemas/ $refs are supported`
+- `Circular $ref detected`
+
+**Example:**
+```typescript
+import { parseOperations, UnsupportedSchemaError } from '@spec2tools/core';
+
+try {
+  const tools = parseOperations(spec);
+} catch (error) {
+  if (error instanceof UnsupportedSchemaError) {
+    console.error('Unsupported schema:', error.message);
+    // "Unsupported schema at getUser.parameters.filter: oneOf is not supported"
+  }
+}
+```
+
+**Handling:**
+```typescript
+try {
+  const tools = parseOperations(spec);
+} catch (error) {
+  if (error instanceof UnsupportedSchemaError) {
+    // Option 1: Modify the OpenAPI spec to avoid unsupported features
+    // Option 2: Skip this operation and continue with others
+    // Option 3: Report the issue to the API provider
+  }
+}
+```
+
+---
+
+## AuthenticationError
+
+Thrown when authentication fails.
+
+```typescript
+class AuthenticationError extends Error {
+  constructor(message: string)
+}
+```
+
+<ParamField path="message" type="string" required>
+  Description of the authentication failure
+</ParamField>
+
+**When Thrown:**
+
+<Expandable title="OAuth2 Flow">
+- Client registration fails
+- User denies authorization
+- No authorization code received
+- Token exchange fails
+- Port 54321 is already in use
+- Authentication times out (5 minutes)
+</Expandable>
+
+<Expandable title="API Key">
+- API key is empty or missing
+</Expandable>
+
+<Expandable title="Bearer Token">
+- Bearer token is empty or missing
+</Expandable>
+
+<Expandable title="Basic Auth">
+- Username or password is empty or missing
+</Expandable>
+
+**Example:**
+```typescript
+import { AuthManager, AuthenticationError } from '@spec2tools/core';
+
+const authManager = new AuthManager({ type: 'oauth2', ... });
+
+try {
+  await authManager.authenticate();
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    console.error('Authentication failed:', error.message);
+    // "Authentication failed: Port 54321 is already in use. Please free the port and try again."
+  }
+}
+```
+
+**Common Messages:**
+```
+Authentication failed: OAuth2 requires authorizationUrl and tokenUrl
+Authentication failed: Client registration failed: 400 Bad Request
+Authentication failed: User denied authorization
+Authentication failed: Token exchange failed: 401 Unauthorized
+Authentication failed: Port 54321 is already in use. Please free the port and try again.
+Authentication failed: Authentication timed out
+Authentication failed: API key is required
+Authentication failed: Bearer token is required
+Authentication failed: Username and password are required for Basic auth
+```
+
+---
+
+## ToolExecutionError
+
+Thrown when a tool execution fails.
+
+```typescript
+class ToolExecutionError extends Error {
+  public readonly toolName: string;
+  public readonly cause: Error;
+
+  constructor(toolName: string, cause: Error)
+}
+```
+
+<ParamField path="toolName" type="string" required>
+  Name of the tool that failed
+</ParamField>
+
+<ParamField path="cause" type="Error" required>
+  The underlying error that caused the failure
+</ParamField>
+
+<ResponseField name="toolName" type="string">
+  Name of the tool that failed (accessible via property)
+</ResponseField>
+
+<ResponseField name="cause" type="Error">
+  The underlying error (accessible via property)
+</ResponseField>
+
+**When Thrown:**
+
+<Expandable title="Parameter Validation">
+- Invalid parameter types
+- Missing required parameters
+- Parameters don't match Zod schema
+</Expandable>
+
+<Expandable title="HTTP Errors">
+- Network failures
+- Non-2xx status codes
+- Timeout errors
+</Expandable>
+
+<Expandable title="Other Errors">
+- Any error during tool execution
+</Expandable>
+
+**Example:**
+```typescript
+import { executeToolByName, ToolExecutionError } from '@spec2tools/core';
+
+try {
+  const result = await executeToolByName(tools, 'getUser', { id: 123 }); // id should be string
+} catch (error) {
+  if (error instanceof ToolExecutionError) {
+    console.error('Tool:', error.toolName);
+    console.error('Cause:', error.cause.message);
+    // Tool: getUser
+    // Cause: Invalid parameters: Expected string, received number
+  }
+}
+```
+
+**Message Format:**
+```
+Tool {toolName} failed: {cause.message}
+```
+
+**Accessing Details:**
+```typescript
+try {
+  await tool.execute(params);
+} catch (error) {
+  if (error instanceof ToolExecutionError) {
+    console.log(error.message);    // "Tool getUser failed: HTTP 404 Not Found..."
+    console.log(error.toolName);   // "getUser"
+    console.log(error.cause);      // Original Error object
+  }
+}
+```
+
+---
+
+## SpecLoadError
+
+Thrown when an OpenAPI spec cannot be loaded or parsed.
+
+```typescript
+class SpecLoadError extends Error {
+  constructor(message: string)
+}
+```
+
+<ParamField path="message" type="string" required>
+  Description of the load failure
+</ParamField>
+
+**When Thrown:**
+
+<Expandable title="HTTP Fetch Failures">
+- Network errors
+- Non-2xx status codes
+- Timeout errors
+</Expandable>
+
+<Expandable title="File Read Failures">
+- File not found
+- Permission denied
+- Invalid file path
+</Expandable>
+
+<Expandable title="Parse Failures">
+- Invalid JSON format
+- Invalid YAML format
+- Malformed content
+</Expandable>
+
+<Expandable title="Spec Validation">
+- No server URL defined in spec
+</Expandable>
+
+**Example:**
+```typescript
+import { loadOpenAPISpec, SpecLoadError } from '@spec2tools/core';
+
+try {
+  const spec = await loadOpenAPISpec('https://api.example.com/openapi.json');
+} catch (error) {
+  if (error instanceof SpecLoadError) {
+    console.error('Failed to load spec:', error.message);
+    // "Failed to load OpenAPI spec: HTTP 404: Not Found"
+  }
+}
+```
+
+**Common Messages:**
+```
+Failed to load OpenAPI spec: HTTP 404: Not Found
+Failed to load OpenAPI spec: Cannot read file: /path/to/spec.yaml
+Failed to load OpenAPI spec: Invalid JSON or YAML format
+Failed to load OpenAPI spec: No server URL defined in OpenAPI spec
+```
+
+**Handling:**
+```typescript
+try {
+  const spec = await loadOpenAPISpec(specPath);
+} catch (error) {
+  if (error instanceof SpecLoadError) {
+    if (error.message.includes('HTTP')) {
+      // Network or HTTP error
+      console.error('Could not fetch spec from URL');
+    } else if (error.message.includes('Cannot read file')) {
+      // File system error
+      console.error('Could not read spec file');
+    } else if (error.message.includes('Invalid JSON or YAML')) {
+      // Parse error
+      console.error('Spec file is malformed');
+    }
+  }
+}
+```
+
+---
+
+## Error Hierarchy
+
+All errors extend the standard JavaScript `Error` class:
+
+```
+Error
+├── UnsupportedSchemaError
+├── AuthenticationError
+├── ToolExecutionError
+└── SpecLoadError
+```
+
+**Type Guards:**
+```typescript
+import { 
+  UnsupportedSchemaError,
+  AuthenticationError,
+  ToolExecutionError,
+  SpecLoadError
+} from '@spec2tools/core';
+
+try {
+  // ... spec2tools operations
+} catch (error) {
+  if (error instanceof UnsupportedSchemaError) {
+    // Handle unsupported schema
+  } else if (error instanceof AuthenticationError) {
+    // Handle auth failure
+  } else if (error instanceof ToolExecutionError) {
+    // Handle execution failure
+  } else if (error instanceof SpecLoadError) {
+    // Handle spec load failure
+  } else {
+    // Handle other errors
+  }
+}
+```

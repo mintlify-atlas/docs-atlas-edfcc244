@@ -1,0 +1,291 @@
+---
+title: Using the SDK
+description: Complete guide to using @spec2tools/sdk to generate AI SDK tools from OpenAPI specifications
+---
+
+The `@spec2tools/sdk` package provides a simple way to convert OpenAPI specifications into AI SDK tools that can be used with Vercel AI SDK and other compatible frameworks.
+
+## Installation
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    npm install @spec2tools/sdk
+    # or
+    pnpm add @spec2tools/sdk
+    # or
+    yarn add @spec2tools/sdk
+    ```
+  </Step>
+
+  <Step title="Install peer dependencies">
+    The SDK requires the Vercel AI SDK:
+    ```bash
+    npm install ai zod
+    ```
+  </Step>
+</Steps>
+
+## Basic Usage
+
+The primary function is `createTools()`, which loads an OpenAPI spec and returns a ToolSet compatible with the Vercel AI SDK.
+
+<CodeGroup>
+```typescript Simple API (No Auth)
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+// Load OpenAPI spec and create tools
+const tools = await createTools({ 
+  spec: './openapi.yaml' 
+});
+
+// Use with AI SDK
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'List all users',
+});
+
+console.log(result.text);
+```
+
+```typescript Remote Spec
+import { createTools } from '@spec2tools/sdk';
+
+const tools = await createTools({ 
+  spec: 'https://api.example.com/openapi.json' 
+});
+```
+
+```typescript With Code Mode
+import { createTools } from '@spec2tools/sdk';
+
+// Code mode collapses all endpoints into 2 tools
+const tools = await createTools({ 
+  spec: './openapi.yaml',
+  codeMode: true // Reduces token usage by ~99.9%
+});
+```
+</CodeGroup>
+
+<Note>
+  The `createTools()` function only works with **unauthenticated APIs**. For APIs requiring authentication, use the [CLI](/guides/using-the-cli) or [MCP server](/guides/mcp-server) instead.
+</Note>
+
+## Authentication Limitation
+
+If your API requires authentication, `createTools()` will throw an error:
+
+```typescript
+try {
+  const tools = await createTools({ 
+    spec: './authenticated-api.yaml' 
+  });
+} catch (error) {
+  // Error: This API requires authentication (oauth2). 
+  // The createTools() function only supports APIs without authentication. 
+  // Use the CLI for authenticated APIs: npx @spec2tools/cli start --spec ./authenticated-api.yaml
+}
+```
+
+**Solution:** Use the [CLI](/guides/using-the-cli) for interactive authentication or the [MCP server](/guides/mcp-server) with environment variables.
+
+## Code Mode
+
+Code mode is a powerful feature that reduces token consumption by ~99.9% by collapsing all API endpoints into just 2 tools: `search` and `execute`.
+
+### How It Works
+
+<Steps>
+  <Step title="Search for endpoints">
+    The model uses the `search` tool to discover available endpoints by keyword:
+    ```typescript
+    search({ query: "user" })
+    // Returns:
+    // listUsers(limit: int = None)
+    //   List all users
+    //   Example: listUsers(limit=10)
+    //
+    // getUser(id: str)
+    //   Get user by ID
+    //   Example: getUser(id="...")
+    ```
+  </Step>
+
+  <Step title="Execute Python code">
+    The model writes Python code to call the endpoints:
+    ```python
+    users = listUsers(limit=5)
+    user = getUser(id="123")
+    user
+    ```
+  </Step>
+
+  <Step title="Sandboxed execution">
+    The code runs in a secure Monty interpreter (Python subset) with a 30-second timeout.
+  </Step>
+</Steps>
+
+### When to Use Code Mode
+
+<table>
+  <thead>
+    <tr>
+      <th>Scenario</th>
+      <th>Standard Mode</th>
+      <th>Code Mode</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>API with 5 endpoints</td>
+      <td>✅ Recommended</td>
+      <td>⚠️ Unnecessary overhead</td>
+    </tr>
+    <tr>
+      <td>API with 50+ endpoints</td>
+      <td>⚠️ High token usage</td>
+      <td>✅ Recommended</td>
+    </tr>
+    <tr>
+      <td>Multi-step workflows</td>
+      <td>❌ Separate tool calls</td>
+      <td>✅ Single execution</td>
+    </tr>
+    <tr>
+      <td>Simple queries</td>
+      <td>✅ Direct execution</td>
+      <td>⚠️ Extra indirection</td>
+    </tr>
+  </tbody>
+</table>
+
+### Example Usage
+
+```typescript packages/sdk/src/lib.ts
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+
+const tools = await createTools({ 
+  spec: './large-api.yaml',
+  codeMode: true 
+});
+
+const result = await generateText({
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  tools,
+  prompt: 'Get the first 10 users, then fetch details for the first user',
+});
+
+// The model will:
+// 1. Call search({ query: "list users" })
+// 2. Call execute({ code: "users = listUsers(limit=10); user = getUser(id=users[0]['id']); user" })
+```
+
+## Converting Existing Tools
+
+You can convert existing AI SDK tools to code mode using `convertToolsToCodeMode()`:
+
+```typescript packages/sdk/src/lib.ts
+import { createMCPClient } from '@ai-sdk/mcp';
+import { convertToolsToCodeMode } from '@spec2tools/sdk';
+
+// Get tools from MCP client
+const client = await createMCPClient({
+  transport: { type: 'sse', url: 'http://localhost:3000/sse' },
+});
+const tools = await client.tools();
+
+// Convert to code mode (N tools → 2 tools)
+const codeModeTools = convertToolsToCodeMode(tools);
+```
+
+This is useful when:
+- You have tools from multiple sources (MCP, custom functions, etc.)
+- You want to reduce token usage without changing your tool generation pipeline
+- You're working with dynamic tool sets
+
+## Advanced Features
+
+### Tool Inspection
+
+The returned ToolSet is a plain JavaScript object with tool names as keys:
+
+```typescript
+const tools = await createTools({ spec: './openapi.yaml' });
+
+console.log(Object.keys(tools));
+// ['listUsers', 'getUser', 'createUser', ...]
+
+for (const [name, tool] of Object.entries(tools)) {
+  console.log(`${name}: ${tool.description}`);
+}
+```
+
+### Error Handling
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+
+try {
+  const tools = await createTools({ spec: './api.yaml' });
+} catch (error) {
+  if (error instanceof Error) {
+    if (error.message.includes('authentication')) {
+      // Handle auth-required APIs
+      console.error('This API requires authentication');
+    } else if (error.message.includes('load')) {
+      // Handle spec loading errors
+      console.error('Failed to load OpenAPI spec');
+    }
+  }
+}
+```
+
+See the [Error Handling guide](/guides/error-handling) for comprehensive error management strategies.
+
+## Complete Example
+
+Here's a full example integrating the SDK with a streaming chat interface:
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+import { streamText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+
+const tools = await createTools({ 
+  spec: 'https://api.github.com/openapi.json',
+  codeMode: true
+});
+
+const stream = await streamText({
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  tools,
+  prompt: 'Search for repositories about AI agents',
+  maxSteps: 5,
+});
+
+for await (const chunk of stream.textStream) {
+  process.stdout.write(chunk);
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Guide" icon="terminal" href="/guides/using-the-cli">
+    Interactive CLI for authenticated APIs and testing
+  </Card>
+  <Card title="MCP Server" icon="server" href="/guides/mcp-server">
+    Integrate with Claude Desktop and other MCP clients
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication-setup">
+    Set up OAuth2, API keys, and bearer tokens
+  </Card>
+  <Card title="Error Handling" icon="bug" href="/guides/error-handling">
+    Handle errors gracefully in production
+  </Card>
+</CardGroup>

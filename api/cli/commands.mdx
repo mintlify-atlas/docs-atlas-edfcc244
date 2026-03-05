@@ -1,0 +1,209 @@
+---
+title: 'Commands'
+description: 'CLI commands and special command reference'
+---
+
+## Start Command
+
+The `start` command initializes the Spec2Tools agent with an OpenAPI specification.
+
+### Syntax
+
+```bash
+spec2tools start --spec <path> [options]
+```
+
+### Required Options
+
+<ParamField path="--spec" type="string" required>
+  Path or URL to OpenAPI specification file
+</ParamField>
+
+### Optional Flags
+
+<ParamField path="--no-auth" type="boolean">
+  Skip authentication even if required by the spec
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  Provide API key or access token directly
+</ParamField>
+
+<ParamField path="--code-mode" type="boolean">
+  Use code mode (2 tools: search + execute)
+</ParamField>
+
+### Examples
+
+```bash
+# Start with local spec file
+spec2tools start --spec ./openapi.yaml
+
+# Start with remote spec URL
+spec2tools start --spec https://api.example.com/openapi.json
+
+# Skip authentication
+spec2tools start --spec ./openapi.yaml --no-auth
+
+# Provide API key directly
+spec2tools start --spec ./openapi.yaml --api-key "sk-1234567890"
+
+# Enable code mode
+spec2tools start --spec ./openapi.yaml --code-mode
+```
+
+---
+
+## Special Commands
+
+Once the agent is running, you can use special commands prefixed with `/` to interact with the system.
+
+### /tools
+
+Lists all available tools generated from the OpenAPI specification.
+
+**Syntax:**
+```bash
+/tools
+```
+
+**Example Output:**
+```
+Available tools:
+1. createUser(name: string, email: string)
+   Create a new user account
+2. getUser(userId: string)
+   Retrieve user details by ID
+3. updateUser(userId: string, name?: string, email?: string)
+   Update an existing user
+```
+
+### /call
+
+Calls a tool directly with specified parameters.
+
+**Syntax:**
+```bash
+/call <toolName> [--param value ...]
+```
+
+**Parameters:**
+- `<toolName>` - Name of the tool to call (required)
+- `--param value` - Parameter name-value pairs
+
+**Examples:**
+```bash
+/call createUser --name "John" --email "john@example.com"
+/call getUser --userId "12345"
+/call updateUser --userId "12345" --name "John Doe"
+```
+
+**Output:**
+```
+✓ createUser completed
+
+Result:
+{
+  "id": "12345",
+  "name": "John",
+  "email": "john@example.com",
+  "createdAt": "2026-03-05T10:30:00Z"
+}
+```
+
+### /schema
+
+Displays the parameter schema for a specific tool.
+
+**Syntax:**
+```bash
+/schema <toolName>
+```
+
+**Example:**
+```bash
+/schema createUser
+```
+
+**Output:**
+```
+Schema for createUser:
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "User's full name"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "User's email address"
+    }
+  },
+  "required": ["name", "email"]
+}
+```
+
+### /clear
+
+Clears the conversation history with the agent.
+
+**Syntax:**
+```bash
+/clear
+```
+
+**Output:**
+```
+Conversation history cleared.
+```
+
+### /help
+
+Displays help information about available commands.
+
+**Syntax:**
+```bash
+/help
+```
+
+**Output:**
+```
+Agent CLI Help
+
+Chat Mode:
+  Just type your message to chat with the AI agent.
+  The agent can use available tools to help you.
+
+Special Commands:
+  /tools  - List all available tools
+  /call <tool> [args]  - Call a tool directly
+  /schema <tool>  - Show tool parameter schema
+  /clear  - Clear conversation history
+  /help  - Show this help message
+  /exit  - Exit the CLI
+
+Examples:
+  > What can you do?
+  > Create a user named John with email john@example.com
+  > /call createUser --name "John" --email "john@example.com"
+  > /schema createUser
+```
+
+### /exit
+
+Exits the CLI application.
+
+**Syntax:**
+```bash
+/exit
+```
+
+**Aliases:**
+- `/quit`
+
+**Output:**
+```
+Goodbye!
+```

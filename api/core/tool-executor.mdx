@@ -1,0 +1,202 @@
+---
+title: Tool Executor
+description: Execute API operations as tools
+---
+
+The tool executor module converts tool definitions into executable functions that make HTTP requests to API endpoints.
+
+## createExecutableTools
+
+Create executable tools from tool definitions.
+
+```typescript
+function createExecutableTools(
+  toolDefs: ToolDefinition[],
+  baseUrl: string,
+  authManager: AuthManager
+): Tool[]
+```
+
+<ParamField path="toolDefs" type="ToolDefinition[]" required>
+  Array of tool definitions from `parseOperations()`. Each definition includes:
+  - `name`: Tool name
+  - `description`: Tool description
+  - `parameters`: Zod schema for validation
+  - `httpMethod`: HTTP method
+  - `path`: API path with placeholders
+  - `authConfig`: Optional operation-specific auth config
+  - `parameterMetadata`: Sets of path, query, and body parameter names
+</ParamField>
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL for API requests (from `extractBaseUrl()`)
+</ParamField>
+
+<ParamField path="authManager" type="AuthManager" required>
+  AuthManager instance for handling authentication
+</ParamField>
+
+<ResponseField name="return" type="Tool[]">
+  Array of executable tools with `execute` functions attached
+</ResponseField>
+
+**Example:**
+```typescript
+import { createExecutableTools } from '@spec2tools/core';
+
+const tools = createExecutableTools(
+  toolDefinitions,
+  'https://api.example.com',
+  authManager
+);
+
+// Execute a tool
+const result = await tools[0].execute({ id: '123' });
+```
+
+---
+
+## executeToolByName
+
+Execute a tool directly by name.
+
+```typescript
+async function executeToolByName(
+  tools: Tool[],
+  toolName: string,
+  params: Record<string, unknown>
+): Promise<unknown>
+```
+
+<ParamField path="tools" type="Tool[]" required>
+  Array of executable tools
+</ParamField>
+
+<ParamField path="toolName" type="string" required>
+  Name of the tool to execute
+</ParamField>
+
+<ParamField path="params" type="Record<string, unknown>" required>
+  Parameters to pass to the tool
+</ParamField>
+
+<ResponseField name="return" type="unknown">
+  The API response. Returns JSON object if Content-Type is application/json, otherwise returns text.
+</ResponseField>
+
+**Throws:**
+- `Error` if tool is not found
+- `ToolExecutionError` if execution fails
+
+**Example:**
+```typescript
+import { executeToolByName } from '@spec2tools/core';
+
+const user = await executeToolByName(
+  tools,
+  'getUser',
+  { id: '123' }
+);
+```
+
+---
+
+## How Tool Execution Works
+
+When a tool is executed:
+
+1. **Parameter Validation:** Parameters are validated against the Zod schema
+
+2. **URL Construction:**
+   - Path parameters replace placeholders: `/users/{id}` → `/users/123`
+   - Query parameters are added to URL search params
+   - Base URL is prepended
+
+3. **Authentication:**
+   - Checks if tool requires auth (respects operation-level security)
+   - Adds auth headers via `authManager.getAuthHeaders()`
+   - Adds auth query params via `authManager.getAuthQueryParams()`
+
+4. **Request Body:**
+   - For POST, PUT, PATCH: Body parameters are sent as JSON
+   - Content-Type header is set to `application/json`
+
+5. **HTTP Request:** Executes fetch with constructed URL, headers, and body
+
+6. **Response Handling:**
+   - Parses JSON if Content-Type is `application/json`
+   - Otherwise returns text
+   - Throws detailed error for non-2xx status codes
+
+**Parameter Separation:**
+
+Parameters are separated into three categories using `parameterMetadata`:
+
+- **Path parameters:** Replace placeholders in the URL path
+- **Query parameters:** Append to URL query string
+- **Body parameters:** Sent in request body (POST/PUT/PATCH only)
+
+**Example:**
+```typescript
+// Tool definition
+{
+  name: 'updateUser',
+  path: '/users/{id}',
+  httpMethod: 'PATCH',
+  parameterMetadata: {
+    pathParams: Set(['id']),
+    queryParams: Set(['notify']),
+    bodyParams: Set(['name', 'email'])
+  }
+}
+
+// Execution
+await tool.execute({
+  id: '123',        // → /users/123
+  notify: true,     // → ?notify=true
+  name: 'John',     // → body: { name: 'John', email: '...' }
+  email: 'j@ex.com'
+});
+
+// Result: PATCH /users/123?notify=true
+// Body: {"name":"John","email":"j@ex.com"}
+```
+
+---
+
+## Error Handling
+
+The executor provides detailed error messages for common HTTP status codes:
+
+<Expandable title="401 Unauthorized">
+  "Authentication failed. Check your API key/token."
+</Expandable>
+
+<Expandable title="403 Forbidden">
+  "Access forbidden. Verify your permissions."
+</Expandable>
+
+<Expandable title="404 Not Found">
+  "Resource not found."
+</Expandable>
+
+<Expandable title="429 Too Many Requests">
+  "Rate limit exceeded. Try again later."
+</Expandable>
+
+<Expandable title="5xx Server Error">
+  "Server error. The API service may be experiencing issues."
+</Expandable>
+
+**Error Format:**
+```
+HTTP 404 Not Found
+URL: GET https://api.example.com/users/999
+Response: {"error":"User not found"}
+Resource not found.
+```
+
+**Throws:**
+- `ToolExecutionError` wrapping validation errors (Zod)
+- `ToolExecutionError` wrapping HTTP errors
+- `ToolExecutionError` wrapping network errors

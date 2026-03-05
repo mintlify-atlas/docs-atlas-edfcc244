@@ -1,0 +1,142 @@
+---
+title: Introduction
+description: Dynamically convert OpenAPI specs into AI agent tools at runtime—no code generation required
+---
+
+# Spec2Tools
+
+## What is Spec2Tools?
+
+Spec2Tools reads your OpenAPI specification and exposes endpoints as AI agent tools—no code generation, no maintenance burden. Use it directly with the AI SDK, spin up a CLI agent, or run an MCP server instantly from your existing spec.
+
+<CardGroup cols={2}>
+  <Card
+    title="AI SDK Integration"
+    icon="code"
+    href="/guides/using-the-sdk"
+  >
+    Create tools directly from OpenAPI specs for use with Vercel AI SDK
+  </Card>
+  <Card
+    title="Interactive CLI"
+    icon="terminal"
+    href="/guides/using-the-cli"
+  >
+    Chat with an AI agent that can call your API endpoints
+  </Card>
+  <Card
+    title="MCP Server"
+    icon="server"
+    href="/guides/mcp-server"
+  >
+    Expose your API as an MCP server for Claude Desktop and other clients
+  </Card>
+  <Card
+    title="Code Mode"
+    icon="bolt"
+    href="/concepts/code-mode"
+  >
+    Reduce token usage by ~99.9% by collapsing all endpoints into 2 tools
+  </Card>
+</CardGroup>
+
+## The Problem
+
+You have a server. You have an OpenAPI spec. Now, with all the MCP hype, you're told you need to build *another* server—an MCP server—just so AI agents can call your API. 
+
+You look it up: define tools, maintain handlers, keep it in sync with your actual API. But wait... you already described your API in OpenAPI. **Why do we need to describe it to the agent twice?**
+
+## The Solution
+
+**Spec2Tools is the alternative.** It reads your OpenAPI spec and exposes endpoints as tools—no code generation, no maintenance burden. Use it directly with the AI SDK, or spin up an MCP server instantly from your existing spec.
+
+## Simple Example
+
+Here's how easy it is to turn your OpenAPI spec into AI agent tools:
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const tools = await createTools({ spec: './openapi.yaml' });
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'List all users',
+});
+
+console.log(result.text);
+```
+
+That's it. No tool definitions, no handler functions, no keeping things in sync. Your OpenAPI spec is the single source of truth.
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Zero Code Generation">
+    Unlike traditional approaches that generate code from specs, Spec2Tools reads your OpenAPI specification at runtime. This means:
+    - No build step required
+    - No generated code to maintain
+    - Changes to your spec are immediately reflected
+    - Single source of truth for your API
+  </Accordion>
+
+  <Accordion title="Multiple Usage Modes">
+    Use Spec2Tools however you need:
+    - **SDK**: Import as a library for programmatic use with Vercel AI SDK
+    - **CLI**: Interactive command-line agent for testing and exploration
+    - **MCP Server**: Expose your API to Claude Desktop and other MCP clients
+  </Accordion>
+
+  <Accordion title="Code Mode for Token Efficiency">
+    For large APIs with hundreds of endpoints, code mode collapses all tools into just 2:
+    - `search`: Discover endpoints by keyword
+    - `execute`: Run Python code that calls the API
+    
+    This cuts input token usage by ~99.9%, making large APIs practical for AI agents.
+  </Accordion>
+
+  <Accordion title="Authentication Support">
+    Spec2Tools automatically detects and handles authentication from your OpenAPI spec:
+    - API Key authentication (header, query, cookie)
+    - Bearer token authentication
+    - OAuth 2.0 flows
+    - Interactive authentication in CLI mode
+  </Accordion>
+</AccordionGroup>
+
+## Packages
+
+Spec2Tools is organized as a monorepo with four packages:
+
+| Package | Description | Install |
+|---------|-------------|----------|
+| [@spec2tools/core](https://www.npmjs.com/package/@spec2tools/core) | Core utilities for OpenAPI parsing and authentication | `npm install @spec2tools/core` |
+| [@spec2tools/sdk](https://www.npmjs.com/package/@spec2tools/sdk) | Create AI SDK tools from OpenAPI specifications | `npm install @spec2tools/sdk` |
+| [@spec2tools/cli](https://www.npmjs.com/package/@spec2tools/cli) | CLI for interacting with OpenAPI-based AI tools | `npx @spec2tools/cli` |
+| [@spec2tools/stdio-mcp](https://www.npmjs.com/package/@spec2tools/stdio-mcp) | MCP server exposing OpenAPI endpoints as tools | `npx @spec2tools/stdio-mcp` |
+
+<Note>
+  Most users will want to install `@spec2tools/sdk` for programmatic use, or run the CLI/MCP packages directly with `npx`.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in 5 minutes
+  </Card>
+  <Card
+    title="SDK Guide"
+    icon="book"
+    href="/guides/using-the-sdk"
+  >
+    Learn how to use Spec2Tools with the AI SDK
+  </Card>
+</CardGroup>

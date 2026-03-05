@@ -1,0 +1,384 @@
+---
+title: Types
+description: TypeScript types and interfaces for Spec2Tools
+---
+
+Core type definitions used throughout Spec2Tools.
+
+## Tool Types
+
+### Tool
+
+Executable tool definition with all metadata.
+
+```typescript
+interface Tool {
+  name: string;
+  description: string;
+  parameters: z.ZodObject<z.ZodRawShape>;
+  execute: (params: unknown) => Promise<unknown>;
+  httpMethod: HttpMethod;
+  path: string;
+  authConfig?: AuthConfig;
+  parameterMetadata?: ParameterMetadata;
+}
+```
+
+<ResponseField name="name" type="string">
+  Tool name, typically the operationId from OpenAPI spec
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Human-readable description of what the tool does
+</ResponseField>
+
+<ResponseField name="parameters" type="z.ZodObject<z.ZodRawShape>">
+  Zod schema for parameter validation
+</ResponseField>
+
+<ResponseField name="execute" type="(params: unknown) => Promise<unknown>">
+  Async function that executes the API call
+</ResponseField>
+
+<ResponseField name="httpMethod" type="HttpMethod">
+  HTTP method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  API path with placeholders (e.g., '/users/{id}')
+</ResponseField>
+
+<ResponseField name="authConfig" type="AuthConfig">
+  Optional operation-specific auth config that overrides global config
+</ResponseField>
+
+<ResponseField name="parameterMetadata" type="ParameterMetadata">
+  Metadata about parameter locations (path, query, body)
+</ResponseField>
+
+---
+
+### HttpMethod
+
+Supported HTTP methods.
+
+```typescript
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+```
+
+---
+
+### ParameterMetadata
+
+Metadata about where parameters should be placed in the HTTP request.
+
+```typescript
+interface ParameterMetadata {
+  pathParams: Set<string>;
+  queryParams: Set<string>;
+  bodyParams: Set<string>;
+}
+```
+
+<ResponseField name="pathParams" type="Set<string>">
+  Parameters that come from path (e.g., {id} in /users/{id})
+</ResponseField>
+
+<ResponseField name="queryParams" type="Set<string>">
+  Parameters that come from query string
+</ResponseField>
+
+<ResponseField name="bodyParams" type="Set<string>">
+  Parameters that come from request body
+</ResponseField>
+
+---
+
+## Authentication Types
+
+### AuthConfig
+
+Authentication configuration.
+
+```typescript
+interface AuthConfig {
+  type: AuthType;
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  scopes?: string[];
+  apiKeyHeader?: string;
+  apiKeyIn?: 'header' | 'query';
+}
+```
+
+<ResponseField name="type" type="AuthType">
+  Authentication type: 'oauth2' | 'apiKey' | 'bearer' | 'basic' | 'none'
+</ResponseField>
+
+<ResponseField name="authorizationUrl" type="string">
+  OAuth2 authorization URL (required for oauth2)
+</ResponseField>
+
+<ResponseField name="tokenUrl" type="string">
+  OAuth2 token URL (required for oauth2)
+</ResponseField>
+
+<ResponseField name="scopes" type="string[]">
+  OAuth2 scopes to request
+</ResponseField>
+
+<ResponseField name="apiKeyHeader" type="string">
+  Header or query parameter name for API key
+</ResponseField>
+
+<ResponseField name="apiKeyIn" type="'header' | 'query'">
+  Where to place the API key
+</ResponseField>
+
+---
+
+### AuthType
+
+Supported authentication types.
+
+```typescript
+type AuthType = 'oauth2' | 'apiKey' | 'bearer' | 'basic' | 'none'
+```
+
+---
+
+### Session
+
+Session state containing tools and authentication.
+
+```typescript
+interface Session {
+  baseUrl: string;
+  tools: Tool[];
+  authConfig: AuthConfig;
+  accessToken?: string;
+  refreshToken?: string;
+}
+```
+
+<ResponseField name="baseUrl" type="string">
+  Base URL for API requests
+</ResponseField>
+
+<ResponseField name="tools" type="Tool[]">
+  Array of executable tools
+</ResponseField>
+
+<ResponseField name="authConfig" type="AuthConfig">
+  Global authentication configuration
+</ResponseField>
+
+<ResponseField name="accessToken" type="string">
+  Current access token
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string">
+  Current refresh token (OAuth2 only)
+</ResponseField>
+
+---
+
+## OpenAPI Types
+
+### OpenAPISpec
+
+Parsed OpenAPI specification.
+
+```typescript
+interface OpenAPISpec {
+  openapi: string;
+  info: {
+    title: string;
+    version: string;
+    description?: string;
+  };
+  servers?: Array<{ url: string; description?: string }>;
+  paths: Record<string, PathItem>;
+  components?: {
+    schemas?: Record<string, SchemaObject>;
+    securitySchemes?: Record<string, SecurityScheme>;
+  };
+  security?: Array<Record<string, string[]>>;
+}
+```
+
+---
+
+### PathItem
+
+API path with operations.
+
+```typescript
+interface PathItem {
+  get?: Operation;
+  post?: Operation;
+  put?: Operation;
+  patch?: Operation;
+  delete?: Operation;
+  parameters?: Parameter[];
+}
+```
+
+---
+
+### Operation
+
+API operation definition.
+
+```typescript
+interface Operation {
+  operationId?: string;
+  summary?: string;
+  description?: string;
+  parameters?: Parameter[];
+  requestBody?: RequestBody;
+  responses?: Record<string, Response>;
+  security?: Array<Record<string, string[]>>;
+}
+```
+
+<ResponseField name="operationId" type="string">
+  Unique operation identifier
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  Short summary of the operation
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Detailed description of the operation
+</ResponseField>
+
+<ResponseField name="parameters" type="Parameter[]">
+  Operation parameters (path, query, header, cookie)
+</ResponseField>
+
+<ResponseField name="requestBody" type="RequestBody">
+  Request body definition
+</ResponseField>
+
+<ResponseField name="responses" type="Record<string, Response>">
+  Response definitions by status code
+</ResponseField>
+
+<ResponseField name="security" type="Array<Record<string, string[]>>">
+  Operation-specific security requirements (overrides global security)
+</ResponseField>
+
+---
+
+### Parameter
+
+API parameter definition.
+
+```typescript
+interface Parameter {
+  name: string;
+  in: 'path' | 'query' | 'header' | 'cookie';
+  required?: boolean;
+  description?: string;
+  schema?: SchemaObject;
+}
+```
+
+---
+
+### RequestBody
+
+Request body definition.
+
+```typescript
+interface RequestBody {
+  required?: boolean;
+  content?: Record<string, MediaType>;
+  description?: string;
+}
+```
+
+---
+
+### MediaType
+
+Media type definition.
+
+```typescript
+interface MediaType {
+  schema?: SchemaObject;
+}
+```
+
+---
+
+### Response
+
+Response definition.
+
+```typescript
+interface Response {
+  description: string;
+  content?: Record<string, MediaType>;
+}
+```
+
+---
+
+### SchemaObject
+
+JSON Schema object for parameters and bodies.
+
+```typescript
+interface SchemaObject {
+  type?: string;
+  format?: string;
+  description?: string;
+  required?: string[];
+  properties?: Record<string, SchemaObject>;
+  items?: SchemaObject;
+  enum?: unknown[];
+  default?: unknown;
+  anyOf?: SchemaObject[];
+  oneOf?: SchemaObject[];
+  allOf?: SchemaObject[];
+  $ref?: string;
+}
+```
+
+**Note:** `anyOf`, `oneOf`, and `allOf` are not supported by the parser and will throw `UnsupportedSchemaError`.
+
+---
+
+### SecurityScheme
+
+Security scheme definition.
+
+```typescript
+interface SecurityScheme {
+  type: 'oauth2' | 'apiKey' | 'http';
+  scheme?: string; // for http type: 'bearer', 'basic'
+  bearerFormat?: string;
+  name?: string; // for apiKey
+  in?: 'header' | 'query' | 'cookie'; // for apiKey
+  flows?: {
+    authorizationCode?: {
+      authorizationUrl: string;
+      tokenUrl: string;
+      scopes?: Record<string, string>;
+    };
+    clientCredentials?: {
+      tokenUrl: string;
+      scopes?: Record<string, string>;
+    };
+    implicit?: {
+      authorizationUrl: string;
+      scopes?: Record<string, string>;
+    };
+  };
+}
+```
+
+**Note:** Only OAuth2 Authorization Code flow is supported. Other flows will result in `{ type: 'none' }` auth config.

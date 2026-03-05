@@ -1,0 +1,235 @@
+---
+title: OpenAPI Parser
+description: Parse OpenAPI specifications and extract tools, authentication, and schemas
+---
+
+The OpenAPI parser module provides functions to load and parse OpenAPI specifications, extract authentication configuration, and convert operations into tool definitions.
+
+## loadOpenAPISpec
+
+Fetch and parse an OpenAPI specification from URL or file path.
+
+```typescript
+async function loadOpenAPISpec(specPath: string): Promise<OpenAPISpec>
+```
+
+<ParamField path="specPath" type="string" required>
+  URL (http:// or https://) or local file path to the OpenAPI specification. Supports both JSON and YAML formats.
+</ParamField>
+
+<ResponseField name="return" type="OpenAPISpec">
+  The parsed OpenAPI specification object
+</ResponseField>
+
+**Throws:**
+- `SpecLoadError` if the HTTP request fails or file cannot be read
+- `SpecLoadError` if the content is not valid JSON or YAML
+
+**Example:**
+```typescript
+import { loadOpenAPISpec } from '@spec2tools/core';
+
+// From URL
+const spec = await loadOpenAPISpec('https://api.example.com/openapi.json');
+
+// From file
+const spec = await loadOpenAPISpec('./openapi.yaml');
+```
+
+---
+
+## extractBaseUrl
+
+Extract the base URL from the OpenAPI spec's servers array.
+
+```typescript
+function extractBaseUrl(spec: OpenAPISpec): string
+```
+
+<ParamField path="spec" type="OpenAPISpec" required>
+  The OpenAPI specification object
+</ParamField>
+
+<ResponseField name="return" type="string">
+  The base URL from the first server entry, with trailing slash removed
+</ResponseField>
+
+**Throws:**
+- `SpecLoadError` if no server URL is defined in the spec
+
+**Example:**
+```typescript
+import { extractBaseUrl } from '@spec2tools/core';
+
+const baseUrl = extractBaseUrl(spec);
+// Returns: "https://api.example.com"
+```
+
+---
+
+## extractAuthConfig
+
+Extract global authentication configuration from security schemes.
+
+```typescript
+function extractAuthConfig(spec: OpenAPISpec): AuthConfig
+```
+
+<ParamField path="spec" type="OpenAPISpec" required>
+  The OpenAPI specification object
+</ParamField>
+
+<ResponseField name="return" type="AuthConfig">
+  Authentication configuration object. Returns `{ type: 'none' }` if no security is defined.
+</ResponseField>
+
+**Supported Auth Types:**
+- OAuth2 (authorization code flow only)
+- API Key (header or query)
+- Bearer token
+- Basic auth
+- None
+
+**Example:**
+```typescript
+import { extractAuthConfig } from '@spec2tools/core';
+
+const authConfig = extractAuthConfig(spec);
+// Returns: { type: 'oauth2', authorizationUrl: '...', tokenUrl: '...', scopes: [...] }
+```
+
+---
+
+## extractOperationAuthConfig
+
+Extract authentication configuration for a specific operation. Uses operation-level security if defined, otherwise falls back to global security.
+
+```typescript
+function extractOperationAuthConfig(
+  spec: OpenAPISpec,
+  operation: Operation
+): AuthConfig
+```
+
+<ParamField path="spec" type="OpenAPISpec" required>
+  The OpenAPI specification object
+</ParamField>
+
+<ParamField path="operation" type="Operation" required>
+  The operation object from a path item
+</ParamField>
+
+<ResponseField name="return" type="AuthConfig">
+  Authentication configuration for the operation
+</ResponseField>
+
+**Note:** If the operation defines `security: []` (empty array), this explicitly means no authentication is required for that operation, even if global security is defined.
+
+---
+
+## parseOperations
+
+Parse all operations from the OpenAPI spec and generate tool definitions.
+
+```typescript
+function parseOperations(spec: OpenAPISpec): Omit<Tool, 'execute'>[]
+```
+
+<ParamField path="spec" type="OpenAPISpec" required>
+  The OpenAPI specification object
+</ParamField>
+
+<ResponseField name="return" type="Omit<Tool, 'execute'>[]">
+  Array of tool definitions (without execute functions). Each tool includes:
+  - `name`: Operation ID or generated name from method and path
+  - `description`: Operation summary or description
+  - `parameters`: Zod schema for parameters
+  - `httpMethod`: HTTP method (GET, POST, PUT, PATCH, DELETE)
+  - `path`: API path
+  - `authConfig`: Operation-specific auth config
+  - `parameterMetadata`: Sets of path, query, and body parameter names
+</ResponseField>
+
+**Schema Limitations:**
+- Does not support `anyOf`, `oneOf`, or `allOf`
+- Arrays of objects are not supported
+- Nested objects beyond 1 level are not supported
+- File uploads are not supported
+- Only `#/components/schemas/` references are supported
+
+**Throws:**
+- `UnsupportedSchemaError` if unsupported schema features are encountered
+
+**Example:**
+```typescript
+import { parseOperations } from '@spec2tools/core';
+
+const tools = parseOperations(spec);
+console.log(tools[0]);
+// {
+//   name: 'getUser',
+//   description: 'Get user by ID',
+//   parameters: z.object({ id: z.string() }),
+//   httpMethod: 'GET',
+//   path: '/users/{id}',
+//   authConfig: { type: 'bearer' },
+//   parameterMetadata: { pathParams: Set(['id']), queryParams: Set([]), bodyParams: Set([]) }
+// }
+```
+
+---
+
+## formatToolSchema
+
+Format tool schema for display in a human-readable format.
+
+```typescript
+function formatToolSchema(tool: Omit<Tool, 'execute'>): string
+```
+
+<ParamField path="tool" type="Omit<Tool, 'execute'>" required>
+  Tool definition object
+</ParamField>
+
+<ResponseField name="return" type="string">
+  Multi-line string representation of the Zod schema
+</ResponseField>
+
+**Example:**
+```typescript
+import { formatToolSchema } from '@spec2tools/core';
+
+const formatted = formatToolSchema(tool);
+console.log(formatted);
+// {
+//   id: z.string().describe("User ID"),
+//   limit: z.number().optional().describe("Maximum results"),
+// }
+```
+
+---
+
+## formatToolSignature
+
+Format tool signature for display as a function signature.
+
+```typescript
+function formatToolSignature(tool: Omit<Tool, 'execute'>): string
+```
+
+<ParamField path="tool" type="Omit<Tool, 'execute'>" required>
+  Tool definition object
+</ParamField>
+
+<ResponseField name="return" type="string">
+  Function signature string with TypeScript-like syntax
+</ResponseField>
+
+**Example:**
+```typescript
+import { formatToolSignature } from '@spec2tools/core';
+
+const signature = formatToolSignature(tool);
+console.log(signature);
+// getUser(id: string, limit?: number)
+```

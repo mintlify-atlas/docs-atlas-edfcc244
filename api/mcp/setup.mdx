@@ -1,0 +1,231 @@
+---
+title: 'Setup'
+description: 'Install and configure the Spec2Tools MCP server'
+---
+
+## Installation
+
+Install the MCP server package from npm:
+
+```bash
+npm install @spec2tools/stdio-mcp
+```
+
+Or using pnpm:
+
+```bash
+pnpm add @spec2tools/stdio-mcp
+```
+
+## Adding to MCP Clients
+
+<Steps>
+  <Step title="Choose your client">
+    The Spec2Tools MCP server works with any MCP-compatible client. Select your preferred client below.
+  </Step>
+
+  <Step title="Configure the server">
+    Add the MCP server to your client configuration:
+
+    <CodeGroup>
+      ```bash Claude Code
+      # Add as an MCP server
+      claude mcp add my-api \
+        -- npx @spec2tools/stdio-mcp ./path/to/openapi.yaml
+
+      # With authentication
+      claude mcp add --env API_KEY=your-api-key my-api \
+        -- npx @spec2tools/stdio-mcp ./openapi.yaml
+
+      # With code mode (2 tools: search + execute)
+      claude mcp add my-api \
+        -- npx @spec2tools/stdio-mcp ./openapi.yaml --code-mode
+      ```
+
+      ```json Claude Desktop
+      {
+        "mcpServers": {
+          "my-api": {
+            "command": "npx",
+            "args": ["@spec2tools/stdio-mcp", "./path/to/openapi.yaml"]
+          }
+        }
+      }
+      ```
+
+      ```json Claude Desktop (with auth)
+      {
+        "mcpServers": {
+          "my-api": {
+            "command": "npx",
+            "args": [
+              "@spec2tools/stdio-mcp",
+              "./openapi.yaml",
+              "--api-key",
+              "your-api-key"
+            ]
+          }
+        }
+      }
+      ```
+
+      ```json Claude Desktop (with env)
+      {
+        "mcpServers": {
+          "my-api": {
+            "command": "npx",
+            "args": ["@spec2tools/stdio-mcp", "./openapi.yaml"],
+            "env": {
+              "API_KEY": "your-api-key"
+            }
+          }
+        }
+      }
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Restart your client">
+    Restart your MCP client to load the new server configuration.
+  </Step>
+</Steps>
+
+## Configuration Options
+
+The MCP server supports the following CLI options:
+
+| Option | Description | Default |
+|--------|-------------|--------|
+| `<spec-path>` | Path or URL to OpenAPI specification (JSON or YAML) | Required |
+| `--name <name>` | Server name for MCP | `openapi-mcp-server` |
+| `--version <ver>` | Server version for MCP | `1.0.0` |
+| `--api-key <key>` | API key or bearer token for authentication | - |
+| `--http <url>` | Connect to a remote MCP server (Streamable HTTP) | - |
+| `--sse <url>` | Connect to a remote MCP server (SSE transport) | - |
+| `--code-mode` | Use code mode (2 tools: search + execute) | `false` |
+| `-h, --help` | Show help message | - |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `API_KEY` | API key or bearer token for authentication |
+
+## Remote MCP Server Proxy
+
+You can proxy an existing remote MCP server through stdio. This lets you connect any HTTP or SSE-based MCP server to clients that only support stdio transport (like Claude Desktop), and optionally apply code mode to reduce token usage.
+
+<CodeGroup>
+  ```bash Streamable HTTP
+  # Proxy via Streamable HTTP
+  spec2tools-mcp --http https://example.com/mcp
+  ```
+
+  ```bash SSE
+  # Proxy via SSE
+  spec2tools-mcp --sse https://example.com/sse
+  ```
+
+  ```bash SSE with Code Mode
+  # Proxy with code mode
+  spec2tools-mcp --sse https://example.com/sse --code-mode
+  ```
+
+  ```bash Claude Code
+  claude mcp add my-remote-api \
+    -- npx @spec2tools/stdio-mcp --sse https://example.com/sse --code-mode
+  ```
+</CodeGroup>
+
+## Programmatic Usage
+
+You can also start the MCP server programmatically:
+
+```typescript
+import { startMcpServer } from '@spec2tools/stdio-mcp';
+
+await startMcpServer({
+  spec: './openapi.yaml',
+  name: 'my-api-server',
+  version: '1.0.0',
+  apiKey: 'your-api-key', // optional
+});
+```
+
+### McpServerOptions
+
+<ParamField path="spec" type="string" required>
+  Path or URL to OpenAPI specification
+</ParamField>
+
+<ParamField path="name" type="string" default="openapi-mcp-server">
+  Server name for MCP
+</ParamField>
+
+<ParamField path="version" type="string" default="1.0.0">
+  Server version for MCP
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  API key or bearer token for authentication
+</ParamField>
+
+<ParamField path="codeMode" type="boolean" default={false}>
+  Use code mode (2 tools: search + execute)
+</ParamField>
+
+<ParamField path="httpUrl" type="string">
+  URL of a remote MCP server (Streamable HTTP transport)
+</ParamField>
+
+<ParamField path="sseUrl" type="string">
+  URL of a remote MCP server (SSE transport)
+</ParamField>
+
+## Authentication
+
+The MCP server supports Bearer token authentication. You can provide your API key in three ways:
+
+1. **Command-line option**: `--api-key your-api-key`
+2. **Environment variable**: `API_KEY=your-api-key`
+3. **Programmatic**: Pass `apiKey` in the options object
+
+The server will automatically add the API key to requests as a Bearer token in the Authorization header.
+
+## Supported OpenAPI Features
+
+<AccordionGroup>
+  <Accordion title="HTTP Methods">
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+  </Accordion>
+
+  <Accordion title="Parameters">
+    - Path parameters (string, number, boolean, arrays)
+    - Query parameters (string, number, boolean, arrays)
+  </Accordion>
+
+  <Accordion title="Request Bodies">
+    - JSON with primitives
+    - Flat objects (1 level deep)
+  </Accordion>
+
+  <Accordion title="Authentication">
+    - Bearer tokens
+    - API keys (header or query)
+  </Accordion>
+</AccordionGroup>
+
+### Limitations
+
+<Warning>
+  The following OpenAPI features are not currently supported:
+  - Nested objects beyond 1 level deep
+  - Arrays of objects
+  - Schema composition (`anyOf`, `oneOf`, `allOf`)
+  - File uploads
+  - `$ref` schema references
+</Warning>

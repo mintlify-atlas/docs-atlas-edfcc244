@@ -1,0 +1,143 @@
+---
+title: createTools
+description: Create AI SDK tools from an OpenAPI specification
+---
+
+## Function Signature
+
+```typescript
+async function createTools(
+  options: Spec2ToolsOptions
+): Promise<ToolSet>
+```
+
+Create AI SDK tools from an OpenAPI specification. The function automatically loads your spec, parses endpoints, and generates tools compatible with Vercel AI SDK's `generateText()`, `streamText()`, and other AI functions.
+
+## Parameters
+
+<ParamField path="options" type="Spec2ToolsOptions" required>
+  Configuration options for tool generation
+
+  <Expandable title="properties">
+    <ParamField path="spec" type="string" required>
+      Path or URL to OpenAPI specification. Can be a local file path (e.g., `./openapi.yaml`) or a remote URL (e.g., `https://api.example.com/openapi.json`).
+    </ParamField>
+
+    <ParamField path="codeMode" type="boolean" default="false">
+      Use code mode (2 tools: `search` + `execute`) instead of one tool per endpoint. This dramatically reduces token usage for large APIs by ~99.9%, converting N tools into just 2 tools. The model discovers endpoints via keyword search and calls them by writing Python code executed in a sandboxed interpreter.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+<ResponseField name="ToolSet" type="Record<string, CoreTool>">
+  A record of tools compatible with AI SDK's `generateText()` and `streamText()` functions. Each key is the tool name, and each value is an executable tool with description, schema, and execute function.
+
+  Without `codeMode`, you get one tool per API endpoint. With `codeMode`, you get exactly 2 tools: `search` and `execute`.
+</ResponseField>
+
+## Usage
+
+### Basic Example
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const tools = await createTools({ spec: './openapi.yaml' });
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'List all users',
+});
+```
+
+### Code Mode Example
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+// Generate 2 tools instead of N tools
+const tools = await createTools({ 
+  spec: './openapi.yaml',
+  codeMode: true 
+});
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'List all users',
+});
+```
+
+### Remote Spec Example
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+
+const tools = await createTools({ 
+  spec: 'https://petstore3.swagger.io/api/v3/openapi.json'
+});
+```
+
+## Error Handling
+
+### Authentication Error
+
+The function throws an error if the API requires authentication (unless `codeMode` is enabled):
+
+```typescript
+try {
+  const tools = await createTools({ spec: './authenticated-api.yaml' });
+} catch (error) {
+  // Error: This API requires authentication (bearer). 
+  // The createTools() function only supports APIs without authentication. 
+  // Use the CLI for authenticated APIs: npx @spec2tools/cli start --spec ./authenticated-api.yaml
+}
+```
+
+**Workaround**: Use the CLI for authenticated APIs, or enable `codeMode` which handles authentication internally.
+
+### Spec Loading Error
+
+```typescript
+try {
+  const tools = await createTools({ spec: './nonexistent.yaml' });
+} catch (error) {
+  // Error: Failed to load spec from ./nonexistent.yaml
+}
+```
+
+## Type Definitions
+
+### Spec2ToolsOptions
+
+```typescript
+interface Spec2ToolsOptions {
+  /** Path or URL to OpenAPI specification */
+  spec: string;
+  /** Use code mode (2 tools: search + execute) instead of one tool per endpoint */
+  codeMode?: boolean;
+}
+```
+
+### ToolSet
+
+```typescript
+type ToolSet = NonNullable<Parameters<typeof generateText>[0]['tools']>;
+```
+
+A record type compatible with AI SDK's tool parameter. Each tool has:
+- `description`: Human-readable description of what the tool does
+- `inputSchema`: Zod schema defining the tool's parameters
+- `execute`: Async function that executes the tool with given parameters
+
+## Related
+
+- [convertToolsToCodeMode](/api/sdk/convert-tools-to-code-mode) - Convert existing tools to code mode
+- [CLI Reference](/api/cli/commands) - Use the CLI for authenticated APIs

@@ -1,80 +1,307 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get up and running with Spec2Tools in 5 minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will walk you through using Spec2Tools in all three modes: SDK, CLI, and MCP server. Choose the approach that fits your needs.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  All examples assume you have an OpenAPI specification file (YAML or JSON) ready. You can use a local file path or a URL to a remote spec.
 </Note>
+
+## SDK Mode
+
+Use Spec2Tools as a library with the Vercel AI SDK.
+
+<Steps>
+  <Step title="Install the SDK">
+    Install the `@spec2tools/sdk` package along with the AI SDK and your preferred model provider:
+
+    <CodeGroup>
+      ```bash npm
+      npm install @spec2tools/sdk ai @ai-sdk/openai
+      ```
+
+      ```bash yarn
+      yarn add @spec2tools/sdk ai @ai-sdk/openai
+      ```
+
+      ```bash pnpm
+      pnpm add @spec2tools/sdk ai @ai-sdk/openai
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Set your API key">
+    Set your OpenAI API key (or the key for whichever model provider you're using):
+
+    ```bash
+    export OPENAI_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step title="Create tools from your spec">
+    Create a simple script that loads your OpenAPI spec and generates tools:
+
+    ```typescript
+    import { createTools } from '@spec2tools/sdk';
+    import { generateText, stepCountIs } from 'ai';
+    import { openai } from '@ai-sdk/openai';
+
+    const tools = await createTools({ spec: './openapi.yaml' });
+
+    const result = await generateText({
+      model: openai('gpt-4o'),
+      tools,
+      prompt: 'List all users',
+      stopWhen: stepCountIs(3)
+    });
+
+    console.log(result.text);
+    ```
+
+    <Tip>
+      You can also pass a URL to `createTools()` instead of a file path:
+      ```typescript
+      const tools = await createTools({ 
+        spec: 'https://api.example.com/openapi.json' 
+      });
+      ```
+    </Tip>
+  </Step>
+
+  <Step title="Run your code">
+    Execute your script:
+
+    ```bash
+    node your-script.js
+    ```
+
+    The AI will use the tools generated from your OpenAPI spec to fulfill the request.
+  </Step>
+</Steps>
+
+### SDK with Code Mode
+
+For large APIs, enable code mode to reduce token usage:
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+
+const tools = await createTools({
+  spec: './openapi.yaml',
+  codeMode: true,
+});
+```
+
+This collapses all endpoints into just 2 tools (`search` and `execute`), cutting token usage by ~99.9%.
+
+<Note>
+  The SDK only supports APIs **without authentication** when using `createTools()` directly. For authenticated APIs, use the CLI or MCP server, or enable code mode which handles authentication internally.
+</Note>
+
+## CLI Mode
+
+Use the interactive CLI to chat with an AI agent that can call your API.
+
+<Steps>
+  <Step title="Set your OpenAI API key">
+    The CLI uses OpenAI's GPT-4o model by default:
+
+    ```bash
+    export OPENAI_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step title="Start the agent">
+    Run the CLI with your OpenAPI spec:
+
+    ```bash
+    npx @spec2tools/cli start --spec ./openapi.yaml
+    ```
+
+    You can also use a remote spec:
+
+    ```bash
+    npx @spec2tools/cli start --spec https://api.example.com/openapi.json
+    ```
+  </Step>
+
+  <Step title="Chat with the agent">
+    Once started, you can type natural language requests:
+
+    ```
+    > List all users
+    > Create a user named John with email john@example.com
+    > What endpoints are available?
+    ```
+
+    The agent will use the available tools to fulfill your requests.
+  </Step>
+</Steps>
+
+### CLI with Authentication
+
+If your API requires authentication, the CLI will prompt you interactively:
+
+```bash
+npx @spec2tools/cli start --spec ./openapi.yaml
+```
+
+Or provide the API key directly:
+
+```bash
+npx @spec2tools/cli start --spec ./openapi.yaml --api-key your-api-key
+```
+
+### CLI Special Commands
+
+The CLI supports several special commands:
+
+- `/tools` - List all available tools
+- `/call <tool> [args]` - Call a tool directly
+- `/schema <tool>` - Show tool parameter schema  
+- `/clear` - Clear conversation history
+- `/help` - Show help message
+- `/exit` - Exit the CLI
+
+**Example:**
+
+```
+> /call createUser --name "John" --email "john@example.com"
+```
+
+### CLI Code Mode
+
+Enable code mode for large APIs:
+
+```bash
+npx @spec2tools/cli start --spec ./openapi.yaml --code-mode
+```
+
+## MCP Server Mode
+
+Expose your API as an MCP server for Claude Desktop and other MCP clients.
+
+<Steps>
+  <Step title="Add to Claude Desktop">
+    Use the `claude mcp add` command to configure the server:
+
+    ```bash
+    claude mcp add --transport stdio my-api \
+      -- npx @spec2tools/stdio-mcp ./openapi.yaml
+    ```
+
+    Replace `my-api` with a name for your server, and `./openapi.yaml` with your spec path.
+  </Step>
+
+  <Step title="Restart Claude Desktop">
+    After adding the server, restart Claude Desktop for the changes to take effect.
+  </Step>
+
+  <Step title="Use in Claude">
+    Your API endpoints are now available as tools in Claude Desktop. Simply chat with Claude and it will use the tools as needed.
+  </Step>
+</Steps>
+
+### MCP with Code Mode
+
+For large APIs, enable code mode to dramatically reduce token usage:
+
+```bash
+claude mcp add --transport stdio my-api \
+  -- npx @spec2tools/stdio-mcp ./openapi.yaml --code-mode
+```
+
+### MCP Manual Configuration
+
+You can also manually configure the MCP server in Claude Desktop's config file (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./openapi.yaml"]
+    }
+  }
+}
+```
+
+### MCP with Authentication
+
+Provide authentication via environment variable or command-line flag:
+
+```bash
+claude mcp add --transport stdio my-api \
+  -- npx @spec2tools/stdio-mcp ./openapi.yaml --api-key your-key
+```
+
+Or in the config file:
+
+```json
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./openapi.yaml", "--api-key", "your-key"],
+      "env": {
+        "API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+## Converting Existing Tools to Code Mode
+
+You can also convert any existing AI SDK tools to code mode:
+
+```typescript
+import { convertToolsToCodeMode } from '@spec2tools/sdk';
+import { createMCPClient } from '@ai-sdk/mcp';
+
+const client = await createMCPClient({
+  transport: { type: 'sse', url: 'http://localhost:3000/sse' },
+});
+
+const tools = await client.tools();
+const codeModeTools = convertToolsToCodeMode(tools);
+```
+
+This works with tools from any source, not just Spec2Tools.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="SDK Guide"
+    icon="code"
+    href="/guides/using-the-sdk"
+  >
+    Learn more about using the SDK
+  </Card>
+  <Card
+    title="CLI Guide"
+    icon="terminal"
+    href="/guides/using-the-cli"
+  >
+    Explore CLI features and commands
+  </Card>
+  <Card
+    title="MCP Guide"
+    icon="server"
+    href="/guides/mcp-server"
+  >
+    Set up and configure MCP servers
+  </Card>
+  <Card
+    title="Code Mode Deep Dive"
+    icon="bolt"
+    href="/concepts/code-mode"
+  >
+    Understand how code mode works
+  </Card>
+</CardGroup>

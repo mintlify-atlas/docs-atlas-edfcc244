@@ -1,0 +1,712 @@
+---
+title: Authentication Setup
+description: Step-by-step guide for configuring OAuth2, API keys, bearer tokens, and basic authentication with Spec2Tools
+---
+
+Spec2Tools supports multiple authentication methods based on your OpenAPI specification's `securitySchemes` definition. This guide shows you how to configure each authentication type.
+
+## Authentication Types
+
+Spec2Tools automatically detects authentication requirements from your OpenAPI spec and supports:
+
+- **OAuth2** - Authorization code flow with PKCE
+- **API Keys** - Header or query parameter
+- **Bearer Tokens** - JWT or opaque tokens
+- **Basic Auth** - Username and password
+- **None** - No authentication required
+
+## OpenAPI Security Schemes
+
+Define authentication in your OpenAPI spec's `components.securitySchemes`:
+
+<CodeGroup>
+```yaml OAuth2
+components:
+  securitySchemes:
+    oauth2Auth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/oauth/authorize
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            read: Read access
+            write: Write access
+
+security:
+  - oauth2Auth: [read, write]
+```
+
+```yaml API Key (Header)
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - apiKeyAuth: []
+```
+
+```yaml API Key (Query)
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: query
+      name: api_key
+
+security:
+  - apiKeyAuth: []
+```
+
+```yaml Bearer Token
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT  # Optional
+
+security:
+  - bearerAuth: []
+```
+
+```yaml Basic Auth
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+security:
+  - basicAuth: []
+```
+</CodeGroup>
+
+## OAuth2 Authentication
+
+OAuth2 is the most complex authentication type, supporting the authorization code flow with PKCE (Proof Key for Code Exchange).
+
+### Requirements
+
+Your OpenAPI spec must include:
+- `authorizationUrl` - Where users authorize the app
+- `tokenUrl` - Where authorization codes are exchanged for tokens
+- `scopes` - Permissions requested (optional)
+
+### Interactive Flow (CLI)
+
+<Steps>
+  <Step title="Start the CLI">
+    ```bash
+    npx @spec2tools/cli start --spec ./authenticated-api.yaml
+    ```
+  </Step>
+
+  <Step title="Automatic client registration">
+    The CLI registers an OAuth2 client dynamically:
+    ```
+    Authentication required (oauth2)
+    Registering OAuth2 client...
+    Client registered successfully.
+    ```
+
+    This uses the [Dynamic Client Registration](https://tools.ietf.org/html/rfc7591) protocol, deriving the registration endpoint from `tokenUrl` by replacing `/token` with `/register`.
+  </Step>
+
+  <Step title="Browser opens for authorization">
+    ```
+    Authentication required. Opening browser...
+    If browser doesn't open, visit: https://auth.example.com/oauth/authorize?...
+    ```
+
+    The CLI:
+    - Starts a local callback server on port 54321
+    - Opens your browser to the authorization URL
+    - Includes PKCE challenge for security
+  </Step>
+
+  <Step title="User authorizes the app">
+    You'll see the authorization provider's login/consent page. After approving:
+    ```
+    ✓ Authentication successful!
+    ```
+
+    The CLI exchanges the authorization code for an access token.
+  </Step>
+</Steps>
+
+### Implementation Details
+
+The OAuth2 flow implementation is in `packages/core/src/auth-manager.ts`:
+
+```typescript packages/core/src/auth-manager.ts
+// PKCE generation
+private generatePKCE(): { verifier: string; challenge: string } {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto
+    .createHash('sha256')
+    .update(verifier)
+    .digest('base64url');
+  return { verifier, challenge };
+}
+
+// Authorization URL construction
+private buildAuthorizationUrl(redirectUri: string, config: AuthConfig): string {
+  const url = new URL(config.authorizationUrl!);
+  const pkce = this.generatePKCE();
+  
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', this.clientId!);
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('code_challenge', pkce.challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  
+  if (config.scopes?.length) {
+    url.searchParams.set('scope', config.scopes.join(' '));
+  }
+  
+  return url.toString();
+}
+```
+
+### Common OAuth2 Providers
+
+<AccordionGroup>
+  <Accordion title="Clerk" icon="shield-halved">
+    ```yaml packages/cli/examples/authenticated-api.yaml
+    components:
+      securitySchemes:
+        clerkAuth:
+          type: oauth2
+          flows:
+            authorizationCode:
+              authorizationUrl: https://your-app.clerk.accounts.dev/oauth/authorize
+              tokenUrl: https://your-app.clerk.accounts.dev/oauth/token
+              scopes:
+                read: Read access to resources
+                write: Write access to resources
+    
+    security:
+      - clerkAuth: [read, write]
+    ```
+  </Accordion>
+
+  <Accordion title="Auth0" icon="lock">
+    ```yaml
+    components:
+      securitySchemes:
+        auth0:
+          type: oauth2
+          flows:
+            authorizationCode:
+              authorizationUrl: https://your-domain.auth0.com/authorize
+              tokenUrl: https://your-domain.auth0.com/oauth/token
+              scopes:
+                openid: OpenID Connect
+                profile: User profile
+    
+    security:
+      - auth0: [openid, profile]
+    ```
+  </Accordion>
+
+  <Accordion title="GitHub" icon="github">
+    GitHub doesn't support dynamic client registration. Use a personal access token with bearer auth instead:
+    
+    ```yaml
+    components:
+      securitySchemes:
+        githubToken:
+          type: http
+          scheme: bearer
+    
+    security:
+      - githubToken: []
+    ```
+    
+    Then provide your token:
+    ```bash
+    npx @spec2tools/cli start --spec ./github-api.yaml --api-key ghp_xxxxx
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### MCP Server (Non-Interactive)
+
+OAuth2 requires interactive browser authorization, which isn't possible in MCP servers running in Claude Desktop. Instead, obtain an access token manually and use it as a bearer token:
+
+<Steps>
+  <Step title="Get an access token">
+    Use the CLI to complete OAuth2 flow and capture the token:
+    ```bash
+    npx @spec2tools/cli start --spec ./api.yaml
+    # Complete OAuth2 flow in browser
+    ```
+
+    Or use your provider's dashboard to generate a token.
+  </Step>
+
+  <Step title="Use token with MCP server">
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "my-api": {
+          "command": "npx",
+          "args": ["@spec2tools/stdio-mcp", "./api.yaml"],
+          "env": {
+            "API_KEY": "your-access-token-here"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Access tokens expire! You'll need to refresh them periodically. Consider using long-lived API keys for MCP servers if your provider supports them.
+</Warning>
+
+## API Key Authentication
+
+API keys are the simplest authentication method, commonly used for developer APIs.
+
+### Header-Based API Keys
+
+<Steps>
+  <Step title="Define in OpenAPI spec">
+    ```yaml
+    components:
+      securitySchemes:
+        apiKeyAuth:
+          type: apiKey
+          in: header
+          name: X-API-Key  # Header name
+    
+    security:
+      - apiKeyAuth: []
+    ```
+  </Step>
+
+  <Step title="CLI usage (interactive)">
+    ```bash
+    npx @spec2tools/cli start --spec ./api.yaml
+    
+    # CLI prompts:
+    Enter your API key (X-API-Key): ****
+    ```
+  </Step>
+
+  <Step title="CLI usage (non-interactive)">
+    ```bash
+    npx @spec2tools/cli start --spec ./api.yaml --api-key sk_test_123abc
+    ```
+  </Step>
+
+  <Step title="MCP server">
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "my-api": {
+          "command": "npx",
+          "args": ["@spec2tools/stdio-mcp", "./api.yaml"],
+          "env": {
+            "API_KEY": "sk_test_123abc"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+### Query Parameter API Keys
+
+Some APIs expect the key in the query string:
+
+```yaml
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: query
+      name: api_key  # Query parameter name
+
+security:
+  - apiKeyAuth: []
+```
+
+The authentication manager handles this automatically:
+
+```typescript packages/core/src/auth-manager.ts
+getAuthQueryParams(authConfig?: AuthConfig): Record<string, string> {
+  const config = authConfig ?? this.globalAuthConfig;
+
+  if (
+    config.type === 'apiKey' &&
+    config.apiKeyIn === 'query' &&
+    config.apiKeyHeader &&
+    this.accessToken
+  ) {
+    return { [config.apiKeyHeader]: this.accessToken };
+  }
+  return {};
+}
+```
+
+### Common API Key Patterns
+
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Header/Query</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Stripe</td>
+      <td>`Authorization: Bearer`</td>
+      <td>`sk_test_...` or `sk_live_...`</td>
+    </tr>
+    <tr>
+      <td>OpenAI</td>
+      <td>`Authorization: Bearer`</td>
+      <td>`sk-...`</td>
+    </tr>
+    <tr>
+      <td>SendGrid</td>
+      <td>`Authorization: Bearer`</td>
+      <td>`SG....`</td>
+    </tr>
+    <tr>
+      <td>Twilio</td>
+      <td>`Authorization: Basic`</td>
+      <td>Account SID + Auth Token (base64)</td>
+    </tr>
+    <tr>
+      <td>AWS</td>
+      <td>`X-Api-Key`</td>
+      <td>API Gateway key</td>
+    </tr>
+  </tbody>
+</table>
+
+## Bearer Token Authentication
+
+Bearer tokens (often JWTs) are used for session-based authentication.
+
+### OpenAPI Definition
+
+```yaml
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT  # Optional, for documentation
+
+security:
+  - bearerAuth: []
+```
+
+### Usage
+
+<CodeGroup>
+```bash CLI (interactive)
+npx @spec2tools/cli start --spec ./api.yaml
+
+# Prompts:
+Enter your Bearer token: ****
+```
+
+```bash CLI (non-interactive)
+npx @spec2tools/cli start --spec ./api.yaml --api-key eyJhbGc...
+```
+
+```json MCP Server
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./api.yaml"],
+      "env": {
+        "API_KEY": "eyJhbGciOiJIUzI1NiIs..."
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+### Implementation
+
+```typescript packages/core/src/auth-manager.ts
+getAuthHeaders(authConfig?: AuthConfig): Record<string, string> {
+  if (!this.accessToken) {
+    return {};
+  }
+
+  const config = authConfig ?? this.globalAuthConfig;
+
+  switch (config.type) {
+    case 'oauth2':
+    case 'bearer':
+      return { Authorization: `Bearer ${this.accessToken}` };
+    
+    case 'basic':
+      return { Authorization: `Basic ${this.accessToken}` };
+    
+    case 'apiKey':
+      if (config.apiKeyIn === 'header' && config.apiKeyHeader) {
+        return { [config.apiKeyHeader]: this.accessToken };
+      }
+      return {};
+    
+    default:
+      return {};
+  }
+}
+```
+
+## Basic Authentication
+
+HTTP Basic authentication uses username and password encoded in base64.
+
+### OpenAPI Definition
+
+```yaml
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+security:
+  - basicAuth: []
+```
+
+### Usage
+
+<CodeGroup>
+```bash CLI (interactive)
+npx @spec2tools/cli start --spec ./api.yaml
+
+# Prompts:
+Enter username: admin
+Enter password: ****
+```
+
+```bash MCP Server
+# Pre-encode credentials
+echo -n "username:password" | base64
+# dXNlcm5hbWU6cGFzc3dvcmQ=
+
+# Use in config:
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./api.yaml"],
+      "env": {
+        "API_KEY": "dXNlcm5hbWU6cGFzc3dvcmQ="
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+### Implementation
+
+```typescript packages/core/src/auth-manager.ts
+private async promptForBasicAuth(): Promise<void> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (prompt: string): Promise<string> => {
+    return new Promise((resolve) => {
+      rl.question(prompt, (answer) => {
+        resolve(answer.trim());
+      });
+    });
+  };
+
+  const username = await question('Enter username: ');
+  const password = await question('Enter password: ');
+  rl.close();
+
+  if (!username || !password) {
+    throw new AuthenticationError(
+      'Username and password are required for Basic auth'
+    );
+  }
+
+  // Base64 encode the credentials
+  this.accessToken = Buffer.from(`${username}:${password}`).toString('base64');
+}
+```
+
+## No Authentication
+
+If your API doesn't require authentication, simply omit the `security` field from your OpenAPI spec:
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Public API
+  version: 1.0.0
+
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      summary: List all users
+      # No security requirement
+```
+
+Or explicitly set it to an empty array:
+
+```yaml
+security: []  # No authentication required
+```
+
+## Skipping Authentication
+
+You can bypass authentication checks (useful for testing):
+
+```bash
+npx @spec2tools/cli start --spec ./api.yaml --no-auth
+```
+
+<Warning>
+  API calls will likely fail with 401/403 errors. Use this only for testing local APIs or when authentication is handled by a proxy.
+</Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="OAuth2: Port 54321 already in use" icon="network-wired">
+    Another process is using the callback port. Solutions:
+    1. Find and stop the conflicting process
+    2. Wait a few seconds and try again
+    3. Check for orphaned Node processes: `pkill -f spec2tools`
+  </Accordion>
+
+  <Accordion title="OAuth2: Browser doesn't open" icon="browser">
+    Copy the URL from the terminal and paste it into your browser manually:
+    ```
+    If browser doesn't open, visit: https://auth.example.com/oauth/authorize?...
+    ```
+  </Accordion>
+
+  <Accordion title="OAuth2: Client registration fails" icon="user-xmark">
+    Your OAuth2 provider may not support [RFC 7591](https://tools.ietf.org/html/rfc7591) dynamic client registration.
+    
+    **Solutions:**
+    1. Create a client manually in your provider's dashboard
+    2. Use a different authentication method (API key, bearer token)
+    3. File an issue if you need custom client registration support
+  </Accordion>
+
+  <Accordion title="401/403 errors despite authentication" icon="ban">
+    **Check:**
+    1. Token/key is not expired
+    2. Token has required scopes/permissions
+    3. Header name matches API expectations (case-sensitive)
+    4. Query parameter name is correct
+    5. Base URL in OpenAPI spec is correct
+
+    **Debug:**
+    ```bash
+    # Test with curl
+    curl -H "X-API-Key: your-key" https://api.example.com/users
+    ```
+  </Accordion>
+
+  <Accordion title="API key in header not working" icon="key">
+    Verify the header name in your OpenAPI spec matches what the API expects:
+    
+    ```yaml
+    # Common variations:
+    name: X-API-Key        # Most common
+    name: X-Api-Key        # Case variation
+    name: Authorization    # Should use bearer type instead
+    name: api-key          # Lowercase
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security Best Practices
+
+<Warning>
+  **Never commit secrets to version control!**
+</Warning>
+
+### Use Environment Variables
+
+```bash
+# Good: Environment variable
+export API_KEY=sk_test_123
+npx @spec2tools/cli start --spec ./api.yaml --api-key $API_KEY
+
+# Bad: Hardcoded in command
+npx @spec2tools/cli start --spec ./api.yaml --api-key sk_test_123
+```
+
+### Use Secrets Managers
+
+For production MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "production-api": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "API_KEY=$(aws secretsmanager get-secret-value --secret-id prod-api-key --query SecretString --output text) npx @spec2tools/stdio-mcp ./api.yaml"
+      ]
+    }
+  }
+}
+```
+
+### Rotate Tokens Regularly
+
+- Set calendar reminders to rotate API keys
+- Use short-lived OAuth2 tokens when possible
+- Implement token refresh logic for long-running processes
+
+### Use Read-Only Scopes
+
+Request minimum required OAuth2 scopes:
+
+```yaml
+# Good: Minimal scopes
+scopes:
+  read:users: Read user information
+
+# Avoid: Excessive scopes
+scopes:
+  read:users: Read user information
+  write:users: Modify users
+  admin: Full admin access
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="bug" href="/guides/error-handling">
+    Learn how to handle authentication errors gracefully
+  </Card>
+  <Card title="CLI Guide" icon="terminal" href="/guides/using-the-cli">
+    Test authentication with the interactive CLI
+  </Card>
+</CardGroup>

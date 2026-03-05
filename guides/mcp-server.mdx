@@ -1,0 +1,466 @@
+---
+title: MCP Server Setup
+description: Use @spec2tools/stdio-mcp to expose your OpenAPI endpoints as an MCP server for Claude Desktop, Claude Code, and other MCP clients
+---
+
+The `@spec2tools/stdio-mcp` package creates an MCP (Model Context Protocol) server that exposes OpenAPI endpoints as tools via stdio transport. This allows AI assistants like Claude Desktop to call any API described by an OpenAPI specification.
+
+## What is MCP?
+
+The Model Context Protocol (MCP) is an open standard for connecting AI assistants to external tools and data sources. MCP servers expose capabilities that AI models can discover and use.
+
+**Supported MCP Clients:**
+- [Claude Desktop](https://claude.ai/download)
+- [Claude Code](https://docs.claude.ai/docs/claude-code)
+- Any MCP-compatible client
+
+## Installation
+
+No installation required! Use `npx` to run the server on-demand:
+
+```bash
+npx @spec2tools/stdio-mcp ./openapi.yaml
+```
+
+Or install globally:
+
+```bash
+npm install -g @spec2tools/stdio-mcp
+spec2tools-mcp ./openapi.yaml
+```
+
+## Quick Start with Claude Code
+
+<Steps>
+  <Step title="Add the MCP server">
+    ```bash
+    claude mcp add my-api -- npx @spec2tools/stdio-mcp ./openapi.yaml
+    ```
+
+    Replace `my-api` with a descriptive name for your API.
+  </Step>
+
+  <Step title="Chat with Claude">
+    Open Claude Code and ask questions:
+    ```
+    List all users from my-api
+    ```
+  </Step>
+
+  <Step title="Claude uses your API">
+    Claude will automatically discover and call the appropriate endpoints.
+  </Step>
+</Steps>
+
+## Quick Start with Claude Desktop
+
+<Steps>
+  <Step title="Locate the config file">
+    Find your `claude_desktop_config.json` file:
+    
+    - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+    - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+    - **Linux:** `~/.config/Claude/claude_desktop_config.json`
+  </Step>
+
+  <Step title="Add your MCP server">
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "my-api": {
+          "command": "npx",
+          "args": ["@spec2tools/stdio-mcp", "./path/to/openapi.yaml"]
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Restart Claude Desktop">
+    Completely quit and reopen Claude Desktop for changes to take effect.
+  </Step>
+
+  <Step title="Verify installation">
+    Look for the MCP server icon (🔌) in Claude Desktop. Your API tools should be available.
+  </Step>
+</Steps>
+
+## Configuration
+
+### Basic Configuration
+
+Minimal setup for an unauthenticated API:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "github-api": {
+      "command": "npx",
+      "args": [
+        "@spec2tools/stdio-mcp", 
+        "https://api.github.com/openapi.json"
+      ]
+    }
+  }
+}
+```
+
+### With Authentication
+
+For APIs requiring authentication, pass the API key as an argument or environment variable:
+
+<CodeGroup>
+```json API Key (Argument)
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": [
+        "@spec2tools/stdio-mcp",
+        "./openapi.yaml",
+        "--api-key",
+        "sk_test_123abc"
+      ]
+    }
+  }
+}
+```
+
+```json API Key (Environment)
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./openapi.yaml"],
+      "env": {
+        "API_KEY": "sk_test_123abc"
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+<Warning>
+  Never commit API keys to version control. Use environment variables or a secrets manager.
+</Warning>
+
+### With Code Mode
+
+Enable code mode to reduce token usage by ~99.9% for large APIs:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "large-api": {
+      "command": "npx",
+      "args": [
+        "@spec2tools/stdio-mcp",
+        "./openapi.yaml",
+        "--code-mode"
+      ]
+    }
+  }
+}
+```
+
+See the [SDK guide](/guides/using-the-sdk#code-mode) for details on code mode.
+
+### Multiple APIs
+
+You can configure multiple MCP servers:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./github-openapi.json"],
+      "env": { "API_KEY": "ghp_xxxxx" }
+    },
+    "stripe": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./stripe-openapi.yaml"],
+      "env": { "API_KEY": "sk_test_xxxxx" }
+    },
+    "internal-api": {
+      "command": "npx",
+      "args": [
+        "@spec2tools/stdio-mcp",
+        "https://internal.company.com/api/openapi.json",
+        "--code-mode"
+      ]
+    }
+  }
+}
+```
+
+## CLI Options
+
+The MCP server supports several command-line options:
+
+| Option | Description | Example |
+|--------|-------------|----------|
+| `<spec-path>` | Path or URL to OpenAPI spec (required) | `./openapi.yaml` |
+| `--name <name>` | Server name for MCP | `--name my-api-server` |
+| `--version <ver>` | Server version for MCP | `--version 1.0.0` |
+| `--api-key <key>` | API key or bearer token | `--api-key sk_123` |
+| `--code-mode` | Use code mode (2 tools) | `--code-mode` |
+| `--http <url>` | Proxy remote MCP (HTTP) | `--http https://mcp.example.com` |
+| `--sse <url>` | Proxy remote MCP (SSE) | `--sse https://mcp.example.com/sse` |
+| `-h, --help` | Show help | |
+
+### Remote MCP Proxy
+
+You can proxy an existing remote MCP server through stdio. This is useful for:
+- Connecting HTTP/SSE MCP servers to stdio-only clients (like Claude Desktop)
+- Applying code mode to remote MCP servers
+- Adding authentication to remote servers
+
+<CodeGroup>
+```bash HTTP Transport
+spec2tools-mcp --http https://example.com/mcp
+```
+
+```bash SSE Transport
+spec2tools-mcp --sse https://example.com/sse
+```
+
+```bash With Code Mode
+spec2tools-mcp --sse https://example.com/sse --code-mode
+```
+
+```json In Claude Desktop
+{
+  "mcpServers": {
+    "remote-api": {
+      "command": "npx",
+      "args": [
+        "@spec2tools/stdio-mcp",
+        "--sse",
+        "https://example.com/sse",
+        "--code-mode"
+      ]
+    }
+  }
+}
+```
+</CodeGroup>
+
+## Environment Variables
+
+The MCP server reads authentication from the `API_KEY` environment variable:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "npx",
+      "args": ["@spec2tools/stdio-mcp", "./openapi.yaml"],
+      "env": {
+        "API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+This works for:
+- **Bearer tokens:** Added as `Authorization: Bearer <API_KEY>`
+- **API keys:** Added to the header/query parameter specified in the OpenAPI spec
+- **OAuth2 access tokens:** Used directly (no OAuth flow)
+
+## Programmatic Usage
+
+You can also start the MCP server programmatically:
+
+```typescript packages/stdio-mcp/src/server.ts
+import { startMcpServer } from '@spec2tools/stdio-mcp';
+
+await startMcpServer({
+  spec: './openapi.yaml',
+  name: 'my-api-server',
+  version: '1.0.0',
+  apiKey: process.env.API_KEY,
+  codeMode: true,
+});
+```
+
+### Options
+
+```typescript
+interface McpServerOptions {
+  /** Path or URL to OpenAPI specification */
+  spec: string;
+  /** Server name for MCP (default: 'openapi-mcp-server') */
+  name?: string;
+  /** Server version for MCP (default: '0.1.0') */
+  version?: string;
+  /** API key or token for authentication */
+  apiKey?: string;
+  /** Use code mode (2 tools: search + execute) */
+  codeMode?: boolean;
+  /** URL of a remote MCP server (HTTP transport) */
+  httpUrl?: string;
+  /** URL of a remote MCP server (SSE transport) */
+  sseUrl?: string;
+}
+```
+
+## How It Works
+
+<Steps>
+  <Step title="Load OpenAPI spec">
+    The server reads your OpenAPI 3.x specification from a local file or URL (supports JSON and YAML).
+  </Step>
+
+  <Step title="Parse operations">
+    Each API operation becomes an MCP tool with:
+    - Tool name from `operationId` (or generated from method + path)
+    - Description from `summary` or `description`
+    - Input schema from parameters and request body
+  </Step>
+
+  <Step title="Start stdio server">
+    The server listens on stdin/stdout for MCP protocol messages.
+  </Step>
+
+  <Step title="Handle tool calls">
+    When the MCP client calls a tool:
+    1. Validates the parameters
+    2. Builds the HTTP request (URL, headers, body)
+    3. Adds authentication if configured
+    4. Executes the request
+    5. Returns the response
+  </Step>
+</Steps>
+
+## Example: GitHub API
+
+Here's a complete example using the GitHub REST API:
+
+<Steps>
+  <Step title="Get a GitHub personal access token">
+    Visit [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+  </Step>
+
+  <Step title="Add to Claude Desktop config">
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "github": {
+          "command": "npx",
+          "args": [
+            "@spec2tools/stdio-mcp",
+            "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+            "--code-mode"
+          ],
+          "env": {
+            "API_KEY": "ghp_your_token_here"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Restart Claude Desktop">
+    Quit and reopen Claude Desktop.
+  </Step>
+
+  <Step title="Use GitHub tools in Claude">
+    ```
+    List my repositories
+    Create a new private repo called 'test-project'
+    Search for issues about AI in the spec2tools repo
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Server not appearing in Claude Desktop" icon="circle-exclamation">
+    **Check:**
+    1. Config file is in the correct location
+    2. JSON syntax is valid (use a JSON validator)
+    3. You've completely quit and reopened Claude Desktop
+    4. Check Claude Desktop logs (Help > Show Logs)
+
+    **Common issues:**
+    - Trailing commas in JSON
+    - Incorrect file paths
+    - Missing `npx` in PATH
+  </Accordion>
+
+  <Accordion title="401/403 authentication errors" icon="lock">
+    **Verify:**
+    1. API key is correct and not expired
+    2. API key has required permissions/scopes
+    3. `API_KEY` environment variable is set correctly
+    4. OpenAPI spec has correct `securitySchemes` definition
+
+    **Test manually:**
+    ```bash
+    npx @spec2tools/stdio-mcp ./openapi.yaml --api-key your-key
+    ```
+  </Accordion>
+
+  <Accordion title="Spec loading errors" icon="file-circle-xmark">
+    **Verify:**
+    1. File path is absolute or relative to Claude Desktop's working directory
+    2. URL is accessible and returns valid JSON/YAML
+    3. OpenAPI spec is version 3.0 or 3.1
+    4. Spec doesn't use unsupported features (see [Supported Features](#supported-features))
+
+    **Test manually:**
+    ```bash
+    npx @spec2tools/stdio-mcp ./openapi.yaml
+    # Should print tool list without errors
+    ```
+  </Accordion>
+
+  <Accordion title="Tools not executing correctly" icon="triangle-exclamation">
+    **Debug:**
+    1. Use the [CLI](/guides/using-the-cli) to test the same operations:
+       ```bash
+       npx @spec2tools/cli start --spec ./openapi.yaml
+       > /call getUser --id 123
+       ```
+    2. Check OpenAPI spec parameter definitions match actual API requirements
+    3. Verify base URL in spec matches actual API endpoint
+  </Accordion>
+</AccordionGroup>
+
+## Supported Features
+
+The MCP server supports:
+
+✅ **HTTP Methods:** GET, POST, PUT, PATCH, DELETE  
+✅ **Parameters:** Path and query parameters (string, number, boolean, arrays)  
+✅ **Request Bodies:** JSON with primitives and flat objects  
+✅ **Authentication:** Bearer tokens, API keys (header or query), OAuth2  
+
+### Limitations
+
+❌ Nested objects beyond 1 level deep  
+❌ Arrays of objects  
+❌ Schema composition (`anyOf`, `oneOf`, `allOf`)  
+❌ File uploads  
+❌ `$ref` schema references  
+
+See [OpenAPI Parser](/api/core/openapi-parser) for details on supported features.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication Setup" icon="lock" href="/guides/authentication-setup">
+    Configure OAuth2, API keys, and bearer tokens
+  </Card>
+  <Card title="Using the CLI" icon="terminal" href="/guides/using-the-cli">
+    Test your API with the interactive CLI
+  </Card>
+  <Card title="Error Handling" icon="bug" href="/guides/error-handling">
+    Debug common issues and errors
+  </Card>
+</CardGroup>

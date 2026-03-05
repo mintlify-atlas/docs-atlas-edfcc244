@@ -1,0 +1,216 @@
+---
+title: 'Options'
+description: 'CLI options and flags reference'
+---
+
+## Global Options
+
+### --version
+
+Displays the current version of Spec2Tools.
+
+**Syntax:**
+```bash
+spec2tools --version
+```
+
+**Example Output:**
+```
+0.1.6
+```
+
+### --help
+
+Displays help information for Spec2Tools commands.
+
+**Syntax:**
+```bash
+spec2tools --help
+```
+
+---
+
+## Start Command Options
+
+These options are available for the `spec2tools start` command.
+
+### --spec
+
+<ParamField path="--spec" type="string" required>
+  Path or URL to the OpenAPI specification file
+</ParamField>
+
+**Accepted Values:**
+- Local file path (relative or absolute)
+- HTTP/HTTPS URL to a spec file
+- Supports JSON and YAML formats
+
+**Examples:**
+```bash
+# Local file (relative path)
+spec2tools start --spec ./openapi.yaml
+
+# Local file (absolute path)
+spec2tools start --spec /path/to/openapi.json
+
+# Remote URL
+spec2tools start --spec https://api.example.com/openapi.json
+spec2tools start --spec https://petstore3.swagger.io/api/v3/openapi.json
+```
+
+**Short Form:**
+```bash
+spec2tools start -s ./openapi.yaml
+```
+
+---
+
+### --no-auth
+
+<ParamField path="--no-auth" type="boolean" default="false">
+  Skip authentication even if required by the specification
+</ParamField>
+
+Use this flag when you want to bypass authentication prompts. This is useful for:
+- Testing with specs that require auth but you don't have credentials
+- Working with public endpoints that don't enforce auth
+- Development and debugging
+
+**Example:**
+```bash
+spec2tools start --spec ./openapi.yaml --no-auth
+```
+
+**Output:**
+```
+⠹ Loading OpenAPI specification...
+✓ Loaded: My API v1.0.0
+  Base URL: https://api.example.com
+⠹ Parsing operations...
+✓ Found 15 operations
+
+Warning: API requires authentication but --no-auth was specified
+
+--- Spec2Tools ---
+Type your message or use special commands:
+  /tools  - List available tools
+  /call   - Call a tool directly
+  /schema - Show tool schema
+  /help   - Show help
+  /exit   - Exit the CLI
+
+>
+```
+
+---
+
+### --api-key
+
+<ParamField path="--api-key" type="string">
+  Provide an API key or access token directly
+</ParamField>
+
+Use this option to supply authentication credentials without interactive prompts. The key is used as:
+- Bearer token for `bearer` auth schemes
+- API key for `apiKey` auth schemes
+- Access token for OAuth flows
+
+**Example:**
+```bash
+spec2tools start --spec ./openapi.yaml --api-key "sk-1234567890abcdef"
+```
+
+**Output:**
+```
+⠹ Loading OpenAPI specification...
+✓ Loaded: My API v1.0.0
+  Base URL: https://api.example.com
+⠹ Parsing operations...
+✓ Found 15 operations
+Using provided API key
+
+--- Spec2Tools ---
+>
+```
+
+<Warning>
+Be careful when using `--api-key` in shell scripts or command history. Consider using environment variables or secure secret management instead.
+</Warning>
+
+---
+
+### --code-mode
+
+<ParamField path="--code-mode" type="boolean" default="false">
+  Enable code mode, which consolidates all tools into 2 meta-tools: search and execute
+</ParamField>
+
+Code mode is useful for:
+- Working with large APIs (100+ operations)
+- Reducing token usage with language models
+- Allowing the agent to dynamically discover tools
+
+**How it works:**
+- `search_tools` - Search for tools by name, description, or parameters
+- `execute_tool` - Execute a tool by name with parameters
+
+**Example:**
+```bash
+spec2tools start --spec ./openapi.yaml --code-mode
+```
+
+**Output:**
+```
+⠹ Loading OpenAPI specification...
+✓ Loaded: My API v1.0.0
+  Base URL: https://api.example.com
+⠹ Parsing operations...
+✓ Found 150 operations
+Code mode enabled (2 tools: search + execute)
+
+--- Spec2Tools ---
+>
+```
+
+**Code Mode Tools:**
+```bash
+> /tools
+
+Code mode tools:
+1. search_tools
+   Search for available tools by name, description, or parameters
+2. execute_tool
+   Execute a tool by name with the provided parameters
+```
+
+---
+
+## Option Combinations
+
+### Authentication + Code Mode
+
+```bash
+spec2tools start --spec ./openapi.yaml --api-key "sk-abc123" --code-mode
+```
+
+### Skip Auth + Code Mode
+
+```bash
+spec2tools start --spec ./openapi.yaml --no-auth --code-mode
+```
+
+### Remote Spec + API Key
+
+```bash
+spec2tools start \
+  --spec https://api.example.com/openapi.json \
+  --api-key "$API_KEY"
+```
+
+<Tip>
+Use environment variables for sensitive values:
+```bash
+export API_KEY="sk-1234567890"
+spec2tools start --spec ./openapi.yaml --api-key "$API_KEY"
+```
+</Tip>

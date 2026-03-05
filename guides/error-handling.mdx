@@ -1,0 +1,660 @@
+---
+title: Error Handling
+description: Comprehensive guide to handling errors in Spec2Tools, including error types, debugging strategies, and best practices
+---
+
+Spec2Tools provides structured error types to help you handle failures gracefully. This guide covers all error scenarios and how to debug them.
+
+## Error Types
+
+All Spec2Tools errors are defined in `packages/core/src/errors.ts` and extend the standard JavaScript `Error` class.
+
+### UnsupportedSchemaError
+
+Thrown when the OpenAPI specification uses features that Spec2Tools doesn't support.
+
+```typescript packages/core/src/errors.ts
+export class UnsupportedSchemaError extends Error {
+  constructor(path: string, reason: string) {
+    super(`Unsupported schema at ${path}: ${reason}`);
+    this.name = 'UnsupportedSchemaError';
+  }
+}
+```
+
+**Common causes:**
+- Nested objects beyond 1 level deep
+- Arrays of objects
+- Schema composition (`anyOf`, `oneOf`, `allOf`)
+- `$ref` references to external schemas
+- File uploads (`multipart/form-data`)
+
+**Example error:**
+```
+UnsupportedSchemaError: Unsupported schema at /paths/users/post/requestBody: 
+Nested objects are not supported
+```
+
+**How to handle:**
+
+<CodeGroup>
+```typescript SDK
+import { createTools } from '@spec2tools/sdk';
+
+try {
+  const tools = await createTools({ spec: './openapi.yaml' });
+} catch (error) {
+  if (error instanceof Error && error.name === 'UnsupportedSchemaError') {
+    console.error('OpenAPI spec contains unsupported features:');
+    console.error(error.message);
+    // Simplify your schema or file an issue
+  }
+}
+```
+
+```bash CLI
+$ npx @spec2tools/cli start --spec ./complex-api.yaml
+
+✗ Parsing operations...
+
+Schema Error: Unsupported schema at /paths/users/post/requestBody: 
+Nested objects beyond 1 level are not supported.
+This OpenAPI specification contains features that are not supported.
+```
+</CodeGroup>
+
+**Solutions:**
+1. Simplify complex nested objects into flat structures
+2. Remove unsupported schema features
+3. File an issue if you need support for specific features
+
+See [OpenAPI Parser](/api/core/openapi-parser) for details on supported features.
+
+### AuthenticationError
+
+Thrown when authentication fails or is misconfigured.
+
+```typescript packages/core/src/errors.ts
+export class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(`Authentication failed: ${message}`);
+    this.name = 'AuthenticationError';
+  }
+}
+```
+
+**Common causes:**
+- Invalid API key or token
+- Expired credentials
+- Missing OAuth2 configuration
+- Port conflicts during OAuth2 flow
+- User denies OAuth2 authorization
+
+**Example errors:**
+```
+AuthenticationError: Authentication failed: Port 54321 is already in use
+AuthenticationError: Authentication failed: Token exchange failed: 400 invalid_grant
+AuthenticationError: Authentication failed: API key is required
+```
+
+**How to handle:**
+
+<CodeGroup>
+```typescript CLI Handler
+import { AuthenticationError } from '@spec2tools/core';
+
+try {
+  await startAgent(options);
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    console.error('Authentication failed:', error.message);
+    
+    // Provide helpful suggestions
+    if (error.message.includes('Port')) {
+      console.log('Try closing other applications and retrying');
+    } else if (error.message.includes('API key')) {
+      console.log('Provide an API key with --api-key option');
+    }
+  }
+}
+```
+
+```bash CLI Output
+$ npx @spec2tools/cli start --spec ./api.yaml
+
+✗ Authentication required (oauth2)
+
+Auth Error: Authentication failed: Port 54321 is already in use. 
+Please free the port and try again.
+```
+</CodeGroup>
+
+**Solutions:**
+- Verify credentials are correct and not expired
+- Check API key has required permissions
+- For OAuth2 port conflicts, wait a few seconds or stop conflicting processes
+- Use `--api-key` to provide credentials directly
+- Use `--no-auth` for testing (requests will likely fail)
+
+See the [Authentication Setup guide](/guides/authentication-setup) for detailed configuration.
+
+### ToolExecutionError
+
+Thrown when an API call fails during tool execution.
+
+```typescript packages/core/src/errors.ts
+export class ToolExecutionError extends Error {
+  public readonly toolName: string;
+  public readonly cause: Error;
+
+  constructor(toolName: string, cause: Error) {
+    super(`Tool ${toolName} failed: ${cause.message}`);
+    this.name = 'ToolExecutionError';
+    this.toolName = toolName;
+    this.cause = cause;
+  }
+}
+```
+
+**Common causes:**
+- HTTP errors (4xx, 5xx)
+- Network timeouts
+- Invalid parameters
+- Missing required fields
+- Malformed request bodies
+
+**Example errors:**
+```
+ToolExecutionError: Tool createUser failed: Request failed with status 400: Invalid email format
+ToolExecutionError: Tool getUser failed: Request failed with status 404: User not found
+ToolExecutionError: Tool listPosts failed: Network timeout after 30s
+```
+
+**How to handle:**
+
+<CodeGroup>
+```typescript SDK with Error Handling
+import { generateText } from 'ai';
+import { createTools } from '@spec2tools/sdk';
+
+const tools = await createTools({ spec: './api.yaml' });
+
+try {
+  const result = await generateText({
+    model: openai('gpt-4o'),
+    tools,
+    prompt: 'Create a user',
+    maxSteps: 3,
+  });
+  
+  console.log(result.text);
+} catch (error) {
+  if (error instanceof Error) {
+    console.error('Tool execution failed:', error.message);
+    
+    // Check for specific HTTP status codes
+    if (error.message.includes('400')) {
+      console.log('Invalid request - check parameter formats');
+    } else if (error.message.includes('401')) {
+      console.log('Authentication failed - check credentials');
+    } else if (error.message.includes('404')) {
+      console.log('Resource not found');
+    } else if (error.message.includes('500')) {
+      console.log('Server error - try again later');
+    }
+  }
+}
+```
+
+```bash CLI Output
+$ /call createUser --name "" --email "invalid"
+
+✗ createUser failed
+
+Tool createUser failed: Request failed with status 400: 
+Validation errors:
+  - name: must not be empty
+  - email: invalid email format
+```
+</CodeGroup>
+
+**Solutions:**
+1. Use `/schema` command to verify required parameters
+2. Test with `/call` to debug before using in chat
+3. Check API documentation for valid parameter formats
+4. Verify authentication is working
+5. Check network connectivity and API status
+
+### SpecLoadError
+
+Thrown when the OpenAPI specification cannot be loaded or parsed.
+
+```typescript packages/core/src/errors.ts
+export class SpecLoadError extends Error {
+  constructor(message: string) {
+    super(`Failed to load OpenAPI spec: ${message}`);
+    this.name = 'SpecLoadError';
+  }
+}
+```
+
+**Common causes:**
+- File not found
+- Invalid JSON/YAML syntax
+- Network errors for remote URLs
+- Unsupported OpenAPI version
+- CORS errors (browser)
+
+**Example errors:**
+```
+SpecLoadError: Failed to load OpenAPI spec: ENOENT: no such file or directory
+SpecLoadError: Failed to load OpenAPI spec: Invalid YAML syntax at line 42
+SpecLoadError: Failed to load OpenAPI spec: Network request failed
+```
+
+**How to handle:**
+
+<CodeGroup>
+```typescript SDK
+import { createTools } from '@spec2tools/sdk';
+
+try {
+  const tools = await createTools({ spec: './openapi.yaml' });
+} catch (error) {
+  if (error instanceof Error && error.message.includes('load')) {
+    console.error('Failed to load OpenAPI spec:');
+    console.error(error.message);
+    
+    if (error.message.includes('ENOENT')) {
+      console.log('File not found - check the path');
+    } else if (error.message.includes('syntax')) {
+      console.log('Invalid YAML/JSON - validate the spec');
+    } else if (error.message.includes('Network')) {
+      console.log('Network error - check URL and connectivity');
+    }
+  }
+}
+```
+
+```bash CLI Output
+$ npx @spec2tools/cli start --spec ./missing.yaml
+
+✗ Loading OpenAPI specification...
+
+Spec Error: Failed to load OpenAPI spec: ENOENT: no such file or directory, 
+open './missing.yaml'
+```
+</CodeGroup>
+
+**Solutions:**
+1. Verify file path is correct (absolute or relative)
+2. Validate YAML/JSON syntax with a linter
+3. Check URL is accessible (for remote specs)
+4. Ensure spec is OpenAPI 3.0 or 3.1
+5. For CORS errors in browser, proxy the spec through your backend
+
+## Debugging Strategies
+
+### Use the CLI for Testing
+
+The CLI is the best tool for debugging issues before integrating with your app:
+
+<Steps>
+  <Step title="Verify spec loads">
+    ```bash
+    npx @spec2tools/cli start --spec ./api.yaml
+    ```
+    This validates the spec, parses operations, and checks for unsupported features.
+  </Step>
+
+  <Step title="List available tools">
+    ```bash
+    > /tools
+    ```
+    Confirms all endpoints were parsed correctly.
+  </Step>
+
+  <Step title="Check tool schemas">
+    ```bash
+    > /schema createUser
+    ```
+    Verifies parameter types and requirements.
+  </Step>
+
+  <Step title="Test tool execution">
+    ```bash
+    > /call createUser --name "Test" --email "test@example.com"
+    ```
+    Tests the actual API call without AI involvement.
+  </Step>
+
+  <Step title="Test with AI">
+    ```bash
+    > Create a user named Alice
+    ```
+    Confirms the full workflow works end-to-end.
+  </Step>
+</Steps>
+
+### Enable Verbose Logging
+
+For SDK usage, add error logging:
+
+```typescript
+import { createTools } from '@spec2tools/sdk';
+import { generateText } from 'ai';
+
+const tools = await createTools({ spec: './api.yaml' });
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'List users',
+  onStepFinish: ({ response }) => {
+    // Log all tool calls and results
+    for (const call of response.toolCalls || []) {
+      console.log('Tool:', call.toolName);
+      console.log('Args:', call.args);
+    }
+    for (const result of response.toolResults || []) {
+      console.log('Result:', result.result);
+      if (result.error) {
+        console.error('Error:', result.error);
+      }
+    }
+  },
+});
+```
+
+### Validate Your OpenAPI Spec
+
+Use online validators to catch issues:
+
+1. [Swagger Editor](https://editor.swagger.io/) - Paste your spec and check for errors
+2. [Redocly CLI](https://redocly.com/docs/cli/) - `npx @redocly/cli lint openapi.yaml`
+3. [Spectral](https://stoplight.io/open-source/spectral) - `npx @stoplight/spectral lint openapi.yaml`
+
+### Test with curl
+
+Before using Spec2Tools, verify the API works with curl:
+
+```bash
+# Test authentication
+curl -H "X-API-Key: your-key" https://api.example.com/users
+
+# Test POST request
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-key" \
+  -d '{"name":"Alice","email":"alice@example.com"}'
+
+# Test with bearer token
+curl -H "Authorization: Bearer your-token" https://api.example.com/users
+```
+
+This helps isolate whether issues are in Spec2Tools or the API itself.
+
+### Check MCP Server Logs
+
+For Claude Desktop integration:
+
+1. Open Claude Desktop
+2. Go to **Help > Show Logs**
+3. Look for error messages from your MCP server
+4. Common issues:
+   - Config file syntax errors
+   - Command not found (check `npx` is in PATH)
+   - Module not found (run `npx @spec2tools/stdio-mcp` manually)
+
+## Common Error Scenarios
+
+<AccordionGroup>
+  <Accordion title="Tools execute but return empty results" icon="circle-exclamation">
+    **Symptoms:**
+    - No error thrown
+    - Tool completes successfully
+    - Result is empty or `null`
+
+    **Causes:**
+    - API returns 204 No Content
+    - Response body is not JSON
+    - API pagination requires additional parameters
+
+    **Debug:**
+    ```bash
+    # Check raw API response
+    curl -v https://api.example.com/users
+    
+    # Test in CLI
+    > /call listUsers
+    ```
+
+    **Solution:**
+    - Check API documentation for required parameters
+    - Verify Content-Type headers
+    - Add default pagination parameters to spec
+  </Accordion>
+
+  <Accordion title="Code mode: 'Unknown function' errors" icon="code">
+    **Symptoms:**
+    ```
+    Runtime Error: Unknown function: listUsers
+    ```
+
+    **Causes:**
+    - Tool name contains invalid Python characters
+    - `operationId` missing from spec
+
+    **Debug:**
+    ```bash
+    > /tools
+    # Check the generated function names
+    ```
+
+    **Solution:**
+    Add explicit `operationId` to your OpenAPI spec:
+    ```yaml
+    paths:
+      /users:
+        get:
+          operationId: listUsers  # Add this
+          summary: List all users
+    ```
+  </Accordion>
+
+  <Accordion title="Authentication works in CLI but not MCP" icon="lock">
+    **Symptoms:**
+    - CLI successfully authenticates
+    - MCP server returns 401/403
+
+    **Causes:**
+    - Environment variable not set correctly
+    - API key format differs between CLI and MCP
+    - OAuth2 token expired
+
+    **Debug:**
+    ```bash
+    # Test MCP server manually
+    API_KEY=your-key npx @spec2tools/stdio-mcp ./api.yaml
+    ```
+
+    **Solution:**
+    - Verify `env.API_KEY` in config matches expected format
+    - For OAuth2, use a long-lived token or API key instead
+    - Check Claude Desktop logs for actual error
+  </Accordion>
+
+  <Accordion title="Large APIs cause token limit errors" icon="coins">
+    **Symptoms:**
+    - AI SDK throws token limit errors
+    - Chat becomes slow or fails
+
+    **Causes:**
+    - Too many tools in context (100+ endpoints)
+    - Large parameter schemas
+
+    **Solution:**
+    Enable code mode:
+    ```typescript
+    const tools = await createTools({ 
+      spec: './large-api.yaml',
+      codeMode: true  // Reduces N tools to 2 tools
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Network timeout errors" icon="clock">
+    **Symptoms:**
+    ```
+    ToolExecutionError: Tool myEndpoint failed: Network timeout after 30s
+    ```
+
+    **Causes:**
+    - Slow API endpoint
+    - Large response bodies
+    - Network connectivity issues
+
+    **Debug:**
+    ```bash
+    # Test endpoint speed
+    time curl https://api.example.com/slow-endpoint
+    ```
+
+    **Solution:**
+    - Optimize API endpoint performance
+    - Add pagination to reduce response size
+    - Implement client-side timeout handling
+    - File an issue if you need configurable timeouts
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling Patterns
+
+### Graceful Degradation
+
+Fall back when specific tools fail:
+
+```typescript
+import { generateText } from 'ai';
+import { createTools } from '@spec2tools/sdk';
+
+try {
+  const tools = await createTools({ spec: './primary-api.yaml' });
+  
+  const result = await generateText({
+    model: openai('gpt-4o'),
+    tools,
+    prompt: 'Get user data',
+  });
+  
+  console.log(result.text);
+} catch (error) {
+  // Fall back to mock data or alternative API
+  console.warn('Primary API failed, using fallback');
+  console.log('Fallback response: [mock data]');
+}
+```
+
+### Retry with Exponential Backoff
+
+Retry failed operations with delays:
+
+```typescript
+async function createToolsWithRetry(
+  spec: string,
+  maxRetries = 3
+): Promise<ToolSet> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await createTools({ spec });
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      
+      const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
+      console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+```
+
+### User-Friendly Error Messages
+
+Provide actionable feedback:
+
+```typescript
+import {
+  UnsupportedSchemaError,
+  AuthenticationError,
+  ToolExecutionError,
+  SpecLoadError,
+} from '@spec2tools/core';
+
+try {
+  const tools = await createTools({ spec });
+  // ...
+} catch (error) {
+  if (error instanceof UnsupportedSchemaError) {
+    return 'Your API spec uses features we don\'t support yet. ' +
+           'Please simplify nested objects or contact support.';
+  } else if (error instanceof AuthenticationError) {
+    return 'Authentication failed. Please check your API key and try again.';
+  } else if (error instanceof SpecLoadError) {
+    return 'Could not load API specification. ' +
+           'Please verify the file path or URL is correct.';
+  } else if (error instanceof ToolExecutionError) {
+    const { toolName, cause } = error as ToolExecutionError;
+    return `API call to ${toolName} failed: ${cause.message}`;
+  } else {
+    return 'An unexpected error occurred. Please try again.';
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Validate specs early" icon="check">
+    Use the CLI to validate OpenAPI specs before integrating with your app.
+  </Card>
+  <Card title="Log tool calls" icon="list">
+    Use `onStepFinish` to log all tool executions and results for debugging.
+  </Card>
+  <Card title="Test with /call first" icon="terminal">
+    Debug API issues with direct tool calls before using AI chat.
+  </Card>
+  <Card title="Handle all error types" icon="shield">
+    Catch specific error classes and provide helpful user feedback.
+  </Card>
+  <Card title="Use code mode for large APIs" icon="code">
+    Avoid token limits by enabling code mode for APIs with 50+ endpoints.
+  </Card>
+  <Card title="Monitor API health" icon="heart-pulse">
+    Set up alerts for frequent 4xx/5xx errors from your API.
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+If you're stuck:
+
+1. **Check the docs** - Search for your error message in this guide
+2. **Use the CLI** - Debug with `/tools`, `/schema`, and `/call`
+3. **Validate your spec** - Use online validators to catch issues
+4. **Test with curl** - Isolate whether the issue is in Spec2Tools or the API
+5. **File an issue** - [GitHub Issues](https://github.com/CahidArda/spec2tools/issues) with:
+   - Full error message
+   - OpenAPI spec (sanitized)
+   - Steps to reproduce
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAPI Parser" icon="list-check" href="/api/core/openapi-parser">
+    See which OpenAPI features are supported
+  </Card>
+  <Card title="CLI Guide" icon="terminal" href="/guides/using-the-cli">
+    Learn debugging techniques with the interactive CLI
+  </Card>
+</CardGroup>
